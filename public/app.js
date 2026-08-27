@@ -46,6 +46,9 @@ const ui = {
   connChip: $('conn-chip'), connText: $('conn-text'),
   ytTools: $('yt-tools'), ytUrl: $('yt-url'), ytLoad: $('yt-load'),
   linkTools: $('link-tools'), linkUrl: $('link-url'), linkLoad: $('link-load'),
+  embedTools: $('embed-tools'), embedUrl: $('embed-url'), embedLoad: $('embed-load'),
+  embedHolder: $('embed-holder'), countdownBtn: $('countdown-btn'),
+  countdown: $('countdown'), countdownNum: $('countdown-num'),
   peers: $('peers'), chatLog: $('chat-log'), chatForm: $('chat-form'), chatInput: $('chat-input'),
   stickerBtn: $('sticker-btn'), stickerInput: $('sticker-input'),
   toast: $('toast'),
@@ -346,6 +349,7 @@ function wireSeg(seg, onChange) {
 const SOURCE_HINTS = {
   file: 'Play a file, or share a browser tab so anything you can watch, she can watch. Streams straight to whoever joins - keep this tab open.',
   sync: 'You each open your own copy of the same file. Only play, pause and seek travel between you, so it costs almost no bandwidth and stays sharp on a weak connection.',
+  embed: 'Puts any page in the room so you can watch it side by side with voice and chat. Playback is NOT synced - nothing outside this app can be controlled from it - so use the countdown to start together.',
   youtube: 'You both load the same YouTube video and it stays in sync. Nothing is uploaded.'
 };
 
@@ -547,6 +551,10 @@ function handleMessage(msg) {
       afterStateChange();
       break;
 
+    case 'countdown':
+      runCountdown(msg.at, msg.from);
+      break;
+
     case 'renamed':
       if (state.session) state.session.title = msg.title;
       ui.roomTitle.textContent = msg.title;
@@ -675,7 +683,8 @@ function handleMessage(msg) {
       ui.roomTitle.textContent = msg.title;
       state.streamKind = msg.kind || null;
       if (msg.youtubeId) loadYouTube(msg.youtubeId, false);
-      if (msg.mediaUrl) loadMediaUrl(msg.mediaUrl, false);
+      if (msg.mediaUrl && state.mode === 'embed') loadEmbed(msg.mediaUrl);
+      else if (msg.mediaUrl) loadMediaUrl(msg.mediaUrl, false);
       if (!state.isHost) {
         // Keep the received tracks: the transceivers are reused when the host
         // starts again, so ontrack will not fire a second time.
@@ -733,11 +742,13 @@ async function enterRoom(msg) {
 
   const isYouTube = state.mode === 'youtube';
   const isSync = state.mode === 'sync';
+  const isEmbed = state.mode === 'embed';
   resetVideoElement();
   wasHostLastTime = state.isHost;
   setShareUi();
   ui.ytHolder.hidden = !isYouTube;
-  ui.video.hidden = isYouTube;
+  ui.embedHolder.hidden = !isEmbed;
+  ui.video.hidden = isYouTube || isEmbed;
 
   state.peers.clear();
   for (const peer of msg.peers) {
@@ -768,6 +779,11 @@ async function enterRoom(msg) {
     else showOverlay(state.isHost
       ? 'Paste a YouTube link below to start.'
       : 'Waiting for the host to pick a video...', null, null, !state.isHost);
+  } else if (isEmbed) {
+    if (msg.mediaUrl) loadEmbed(msg.mediaUrl);
+    else showOverlay(state.isHost
+      ? 'Paste the address of the page you want to watch together.'
+      : 'Waiting for the host to open a page.', null, null, !state.isHost);
   } else if (isSync) {
     if (msg.mediaUrl) {
       loadMediaUrl(msg.mediaUrl, false);
@@ -845,6 +861,11 @@ function goHome() {
   ui.banners.innerHTML = '';
   ui.chatNote.hidden = true;
   stopConnectionWatch();
+  ui.embedHolder.innerHTML = '';
+  ui.embedHolder.hidden = true;
+  ui.countdown.hidden = true;
+  clearInterval(countdownTimer);
+  embedWarned = false;
   clearReply();
   closeMentions();
   closeHelp();
@@ -1410,7 +1431,8 @@ function updateTimeUi(position, duration) {
 function updateControlsEnabled() {
   let ready;
   // A second screen has no player, so it goes on what the host reports.
-  if (state.companion) ready = state.duration > 0;
+  if (state.mode === 'embed') ready = false;
+  else if (state.companion) ready = state.duration > 0;
   else if (state.mode === 'sync') ready = !!ui.video.src;
   else if (state.mode === 'youtube') ready = !!state.yt;
   else if (state.isHost) ready = !!ui.video.src || !!state.localFilm;
@@ -2030,6 +2052,7 @@ function applyHostTools() {
   ui.ytTools.hidden = !isYouTube;
   // Only the host shares a link, or everyone would fight over the source.
   ui.linkTools.hidden = !(isSync && state.isHost);
+  ui.embedTools.hidden = !(state.mode === 'embed' && state.isHost);
 
   if (wasHostLastTime && !state.isHost && state.mode === 'file') {
     // Handed the role over: stop pushing our own picture at everyone.
@@ -2403,6 +2426,9 @@ try { musicEnabled = localStorage.getItem(MUSIC_KEY) !== 'off'; } catch {}
 // count: the music keeps a paused room company until playback resumes.
 function mediaPlaying() {
   if (!state.session) return false;
+  // Nothing can be observed inside another site's page, so assume it is being
+  // watched and keep the music out of the way.
+  if (state.mode === 'embed') return true;
   if (state.mode === 'sync') {
     return state.companion ? (state.duration > 0 && !state.paused)
                            : (!!ui.video.src && !ui.video.paused);
@@ -3412,3 +3438,92 @@ ui.linkLoad.addEventListener('click', () => {
 ui.linkUrl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); ui.linkLoad.click(); }
 });
+
+
+/* ------------------------------------------------------------------ */
+/* embedding another page                                              */
+/* ------------------------------------------------------------------ */
+
+// This is the honest fallback for anything with no player API. The page is put
+// in the room so it can be watched side by side with voice and chat, but
+// nothing inside it can be read or driven from here - that is the browser's
+// same-origin rule, not a gap in this app - so playback genuinely is not
+// synchronised and the room counts down instead.
+let embedWarned = false;
+
+function loadEmbed(url) {
+  ui.embedHolder.innerHTML = '';
+
+  const frame = document.createElement('iframe');
+  frame.src = url;
+  frame.referrerPolicy = 'no-referrer';
+  frame.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+  // No allow-popups and no allow-top-navigation: sites like this fire redirect
+  // ads, and without those the page cannot drag the room somewhere else.
+  frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+  frame.title = 'Shared page';
+
+  ui.embedHolder.appendChild(frame);
+  ui.embedHolder.hidden = false;
+  hideOverlay();
+
+  if (!embedWarned) {
+    embedWarned = true;
+    sysMessage('Playback here is not synced. Use "Start together" to count everyone in.');
+  }
+}
+
+ui.embedLoad.addEventListener('click', () => {
+  const raw = ui.embedUrl.value.trim();
+  if (!raw) return;
+  let parsed;
+  try {
+    parsed = new URL(raw.includes('://') ? raw : 'https://' + raw);
+  } catch {
+    toast('That is not a valid address.');
+    return;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    toast('Only http and https pages work.');
+    return;
+  }
+  const url = parsed.toString();
+  loadEmbed(url);
+  send({ t: 'source', url, youtubeId: null, kind: 'embed', title: parsed.hostname });
+  ui.roomTitle.textContent = parsed.hostname;
+});
+
+ui.embedUrl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); ui.embedLoad.click(); }
+});
+
+/* ---------- counting everyone in ---------- */
+
+ui.countdownBtn.addEventListener('click', () => {
+  send({ t: 'countdown' });
+  runCountdown(Date.now() + 3200, null);
+});
+
+let countdownTimer = null;
+
+function runCountdown(at, from) {
+  clearInterval(countdownTimer);
+  if (from) sysMessage(from + ' is counting everyone in.');
+
+  const tick = () => {
+    const left = Math.ceil((at - Date.now()) / 1000);
+    if (left > 0) {
+      ui.countdown.hidden = false;
+      ui.countdownNum.textContent = String(left);
+      return;
+    }
+    ui.countdownNum.textContent = 'NOW';
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    cue('tagged');
+    setTimeout(() => { ui.countdown.hidden = true; }, 1200);
+  };
+
+  tick();
+  countdownTimer = setInterval(tick, 200);
+}

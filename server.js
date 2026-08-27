@@ -368,7 +368,7 @@ wss.on('connection', (ws, req) => {
         isPublic: !!msg.isPublic,
         // 'file' streams the host's picture out; 'sync' keeps everyone's own
         // copy in step and sends no video at all.
-        source: ['youtube', 'sync'].includes(msg.source) ? msg.source : 'file',
+        source: ['youtube', 'sync', 'embed'].includes(msg.source) ? msg.source : 'file',
         youtubeId: null,
         mediaUrl: null,
         streamKind: null,
@@ -593,6 +593,14 @@ wss.on('connection', (ws, req) => {
         if (typeof msg.muteAll === 'boolean') session.config.muteAll = msg.muteAll;
         broadcast(session, { t: 'config', config: session.config, by: me.name });
         pushRoster(session);
+        break;
+      }
+
+      // Nothing can drive a page from another site, so the room counts down
+      // together instead and everyone presses play on the same beat.
+      case 'countdown': {
+        if (!isHost) break;
+        broadcast(session, { t: 'countdown', from: me.name, at: Date.now() + 3200 });
         break;
       }
 

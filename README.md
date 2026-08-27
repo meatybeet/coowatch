@@ -357,6 +357,24 @@ a file without the user picking it again, so a host who reloads is asked to
 choose the file once more. A YouTube session comes back completely, since only
 the video id has to survive.
 
+## Any web page, side by side
+
+The last resort, for a video that lives on a site with no player API. The page
+is put in the room so it can be watched alongside voice, chat and reactions.
+
+**Playback is not synchronised, and cannot be.** A page from another site is
+sealed off by the browser's same-origin rule: this app cannot read where its
+player is, or start it, or seek it. YouTube is the exception only because
+Google publishes an interface for exactly that. So instead the host presses
+**Start together** and everyone gets a three second countdown to press play on.
+
+The frame is sandboxed without popups or top-level navigation, so the redirect
+adverts these sites are fond of cannot drag the room somewhere else. Some sites
+refuse to be framed at all, and there is nothing to be done about that either.
+
+Prefer any of the other three when they apply. This one is a way to keep each
+other company, not a way to stay in step.
+
 ## When someone is on a bad connection
 
 In order of how much it helps:
