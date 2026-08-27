@@ -79,9 +79,10 @@ and closes it before starting a new one.
 ## Optional: waiting room music
 
 Drop any MP3 at `public/waiting-room.mp3` and it loops on the home screen and in
-a room with nothing playing yet. It stops as soon as a video is loaded and does
-not come back when you pause mid-episode. The note button toggles it and the
-choice is remembered per device.
+a room with nothing playing yet. It keeps a room company right up until
+something is actually being watched, and comes back when playback stops, so a
+paused room is never silent. Only two things stop it: pressing the note button,
+or a video actually playing. The choice is remembered per device.
 
 It is deliberately **not** included in this repository — whatever you drop there
 is most likely someone else's copyright. The app works fine without it: the
@@ -90,7 +91,8 @@ toggle simply hides itself.
 Browsers refuse to start audio before the page has been interacted with, so on a
 cold load it begins at your first click or key press rather than instantly.
 
-Microphones start **muted**. Nobody is broadcast before they choose to be.
+Microphones start **muted**, in every mode, and stay that way until the person
+presses the button themselves. Nobody is broadcast before they choose to be.
 
 
 ## Two ways to watch

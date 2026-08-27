@@ -714,6 +714,8 @@ function goHome() {
   ui.room.classList.remove('companion');
   ui.companionCard.hidden = true;
   historyEnd();
+  quietSince = 0;
+  wasPlaying = false;
   setTimeout(updateMusic, 0);
   state.filmTracks = [];
   state.gotFilm = false;
@@ -794,7 +796,10 @@ function startMic() {
     video: false
   }).then((stream) => {
     state.micStream = stream;
-    setMic(true);
+    // Do NOT flip selfMuted here. Everyone starts muted, and this resolves a
+    // moment after the room is entered, so calling setMic(true) would quietly
+    // switch the microphone back on behind the user.
+    applyMicState();
     return stream;
   }).catch(() => {
     state.micStream = null;
@@ -1147,6 +1152,7 @@ function onVideoPlay() {
   state.paused = false;
   ui.playBtn.textContent = 'Pause';
   sendProgress();
+  updateMusic();
 }
 
 function onVideoPause() {
@@ -1154,6 +1160,7 @@ function onVideoPause() {
   state.paused = true;
   ui.playBtn.textContent = 'Play';
   sendProgress();
+  updateMusic();
 }
 
 function onVideoTime() {
@@ -2084,14 +2091,20 @@ try { musicEnabled = localStorage.getItem(MUSIC_KEY) !== 'off'; } catch {}
 // True whenever there is no picture to watch: the home screen, or a room that
 // is still waiting for someone to put something on. Pausing mid-episode does
 // not count, otherwise the music would barge in every time you stop to talk.
+// Is something actually being watched right now? Loaded-but-paused does not
+// count: the music keeps a paused room company until playback resumes.
+function mediaPlaying() {
+  if (!state.session) return false;
+  if (state.mode === 'youtube') return !!state.yt && !state.paused;
+  if (state.streamKind === 'screen') return true;
+  if (state.companion) return state.duration > 0 && !state.paused;
+  if (state.isHost) return (!!ui.video.src || !!state.localFilm) && !ui.video.paused;
+  return state.gotFilm && !state.paused;
+}
+
 function musicShouldPlay() {
   if (!musicEnabled || !musicAvailable) return false;
-  if (!state.session) return true;
-  if (state.mode === 'youtube') return !state.yt;
-  if (state.streamKind === 'screen') return false;
-  if (state.companion) return !(state.duration > 0);
-  if (state.isHost) return !ui.video.src && !state.localFilm;
-  return !state.gotFilm;
+  return !mediaPlaying();
 }
 
 function fadeMusicTo(target, done) {
@@ -2119,10 +2132,32 @@ function renderMusicButtons(playing) {
   }
 }
 
+// A seek or a buffer flicks playback off for a second or two. Waiting a beat
+// before fading the music back in keeps that from sounding like a glitch.
+const MUSIC_RESUME_DELAY = 4000;
+let quietSince = 0;
+let wasPlaying = false;
+let musicRecheck = null;
+
 function updateMusic() {
   const audio = ui.waitingAudio;
   if (!audio) return;
-  const want = musicShouldPlay();
+
+  const playing = mediaPlaying();
+  if (playing !== wasPlaying) {
+    wasPlaying = playing;
+    if (!playing) quietSince = Date.now();
+  }
+
+  let want = musicShouldPlay();
+  if (want && state.session && quietSince) {
+    const waited = Date.now() - quietSince;
+    if (waited < MUSIC_RESUME_DELAY) {
+      want = false;
+      clearTimeout(musicRecheck);
+      musicRecheck = setTimeout(updateMusic, MUSIC_RESUME_DELAY - waited + 50);
+    }
+  }
   renderMusicButtons(want && !audio.paused);
 
   if (want) {
