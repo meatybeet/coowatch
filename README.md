@@ -28,6 +28,12 @@ The tunnel is fetched automatically the first time (about 30 seconds) and cached
 afterwards. Nothing is installed globally and no account is needed. The address
 changes each run, so send a fresh link each time.
 
+`npm run share` also opens the address in a browser for you. It prefers Chrome
+or Edge over the system default, because some browsers - Opera especially -
+ship a VPN and a bandwidth limiter that quietly break peer-to-peer video. Set
+`COOWATCH_BROWSER=default` to use the system default anyway, or
+`COOWATCH_NO_OPEN=1` to open nothing.
+
 If you are both on the same network, `npm start` and http://localhost:3000 is
 enough.
 

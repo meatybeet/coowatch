@@ -80,6 +80,57 @@ function line(char) {
   return char.repeat(64);
 }
 
+// Some browsers, Opera in particular, ship a VPN and a bandwidth limiter that
+// quietly break peer-to-peer video. If a plain Chromium or Firefox is
+// installed, open there rather than gambling on the system default.
+// COOWATCH_BROWSER=default forces the system default back.
+function preferredBrowser() {
+  if (process.platform !== 'win32') return null;
+  const choice = process.env.COOWATCH_BROWSER;
+  if (choice === 'default') return null;
+  if (choice && fs.existsSync(choice)) return choice;
+
+  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+  const relative = [
+    ['Google', 'Chrome', 'Application', 'chrome.exe'],
+    ['Microsoft', 'Edge', 'Application', 'msedge.exe']
+  ];
+  for (const parts of relative) {
+    for (const root of roots) {
+      const full = path.join(root, ...parts);
+      try {
+        if (fs.existsSync(full)) return full;
+      } catch {
+        // unreadable path, try the next
+      }
+    }
+  }
+  return null;
+}
+
+
+// Opened once the address is known, so a double-click on the desktop shortcut
+// lands you straight on the page. COOWATCH_NO_OPEN=1 skips it.
+function openBrowser(url) {
+  if (process.env.COOWATCH_NO_OPEN === '1' || process.argv.includes('--no-open')) return;
+  try {
+    if (process.platform === 'win32') {
+      const browser = preferredBrowser();
+      if (browser) {
+        spawn(browser, [url], { stdio: 'ignore', detached: true }).unref();
+        return;
+      }
+      spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+    } else {
+      spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref();
+    }
+  } catch {
+    // no browser is not fatal; the address is printed above anyway
+  }
+}
+
 function banner(url) {
   console.log('');
   console.log(line('='));
@@ -94,6 +145,7 @@ function banner(url) {
   console.log('  Keep this window open. Ctrl+C stops everything.');
   console.log(line('='));
   console.log('');
+  openBrowser(url);
 }
 
 async function waitForServer(attempts = 40) {
