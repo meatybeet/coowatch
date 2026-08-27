@@ -162,6 +162,19 @@ bandwidth, stays perfectly sharp, and is unaffected by how bad anyone's
 connection is. Easily the best option when it applies: the catch is that you
 both need the same file, and it should be the same cut, or the timeline drifts.
 
+In synced mode the host can also paste a **direct video link** instead of
+everyone opening their own file. Each person then fetches it from wherever it
+is hosted and the clocks are kept together as usual, which is gentle on a weak
+connection because nobody is pulling the video from the room's host.
+
+That has to be the address of the file itself - something ending in `.mp4` or
+`.webm` that serves the actual bytes. A page that merely contains a player is
+not a video, and a player embedded from another site cannot be driven from
+here, so there would be nothing to keep in step. File hosts that only give you
+a landing page will not work; hosting that hands out a real file link will.
+Seeking needs the host to support range requests, which nearly all do, and no
+CORS headers are required because the video is only played, never read.
+
 **A YouTube link** — you both load the same video and the app keeps the clocks
 together. No upload, no bandwidth cost, works on any connection. Play, pause and
 seek travel to everybody, and drift over 1.5 seconds is corrected automatically.

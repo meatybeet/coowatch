@@ -45,6 +45,7 @@ const ui = {
   controls: $('controls'), liveBadge: $('live-badge'),
   connChip: $('conn-chip'), connText: $('conn-text'),
   ytTools: $('yt-tools'), ytUrl: $('yt-url'), ytLoad: $('yt-load'),
+  linkTools: $('link-tools'), linkUrl: $('link-url'), linkLoad: $('link-load'),
   peers: $('peers'), chatLog: $('chat-log'), chatForm: $('chat-form'), chatInput: $('chat-input'),
   stickerBtn: $('sticker-btn'), stickerInput: $('sticker-input'),
   toast: $('toast'),
@@ -674,6 +675,7 @@ function handleMessage(msg) {
       ui.roomTitle.textContent = msg.title;
       state.streamKind = msg.kind || null;
       if (msg.youtubeId) loadYouTube(msg.youtubeId, false);
+      if (msg.mediaUrl) loadMediaUrl(msg.mediaUrl, false);
       if (!state.isHost) {
         // Keep the received tracks: the transceivers are reused when the host
         // starts again, so ontrack will not fire a second time.
@@ -767,8 +769,14 @@ async function enterRoom(msg) {
       ? 'Paste a YouTube link below to start.'
       : 'Waiting for the host to pick a video...', null, null, !state.isHost);
   } else if (isSync) {
-    showOverlay('Open your own copy of the file to join in.',
-      'Choose file', () => ui.fileInput.click());
+    if (msg.mediaUrl) {
+      loadMediaUrl(msg.mediaUrl, false);
+    } else {
+      showOverlay(state.isHost
+        ? 'Choose your copy of the file, or paste a direct video link below.'
+        : 'Open your own copy of the file to join in.',
+        'Choose file', () => ui.fileInput.click());
+    }
   } else if (state.isHost) {
     showOverlay(rejoined
       ? 'Session restored. Pick the file again to start streaming.'
@@ -2020,6 +2028,8 @@ function applyHostTools() {
   ui.pickFile.hidden = isYouTube;
   ui.shareBtn.hidden = isYouTube || isSync;
   ui.ytTools.hidden = !isYouTube;
+  // Only the host shares a link, or everyone would fight over the source.
+  ui.linkTools.hidden = !(isSync && state.isHost);
 
   if (wasHostLastTime && !state.isHost && state.mode === 'file') {
     // Handed the role over: stop pushing our own picture at everyone.
@@ -3319,3 +3329,86 @@ function stopConnectionWatch() {
 }
 
 startConnectionWatch();
+
+
+/* ------------------------------------------------------------------ */
+/* a shared video link                                                 */
+/* ------------------------------------------------------------------ */
+
+// The same idea as the YouTube path, but pointing at a plain video file: each
+// person fetches it from wherever it lives, and only the clock is shared. That
+// keeps a weak connection pulling from a real host rather than from the room's
+// host, which is usually far kinder to it.
+//
+// This needs the address of the file itself. A page that happens to contain a
+// player is not a video, and a player embedded from another site cannot be
+// driven from here, so there is nothing to keep in step.
+async function loadMediaUrl(url, announce) {
+  if (!url) return;
+  ui.linkUrl.value = url;
+
+  resetVideoElement();
+  ui.video.src = url;
+  ui.video.muted = false;
+  showOverlay('Loading the video...', null, null, true);
+
+  const ready = await waitForVideoReady(ui.video);
+  if (!ready) {
+    showOverlay(
+      'That link did not play. It has to point at the video file itself, not at a page with a player on it.',
+      state.isHost ? 'Try another' : null,
+      state.isHost ? () => { hideOverlay(); ui.linkUrl.focus(); } : null
+    );
+    return;
+  }
+
+  hideOverlay();
+  state.duration = ui.video.duration || 0;
+  state.streamKind = 'file';
+  applyStreamKind();
+  updateControlsEnabled();
+
+  if (announce) {
+    const guess = decodeURIComponent(url.split('/').pop() || '').replace(/\.[^.]+$/, '');
+    const title = guess || (state.session ? state.session.title : 'Video');
+    send({ t: 'source', url, youtubeId: null, kind: 'file', title });
+    ui.roomTitle.textContent = title;
+    startProgressLoop();
+    sysMessage('Shared a video link. Everyone plays it from there.');
+  }
+
+  try {
+    await ui.video.play();
+  } catch {
+    showOverlay('Ready. Tap to start watching.', 'Start', async () => {
+      try { await ui.video.play(); } catch {}
+      hideOverlay();
+    });
+  }
+}
+
+ui.linkLoad.addEventListener('click', () => {
+  const url = ui.linkUrl.value.trim();
+  if (!url) return;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    toast('That is not a valid address.');
+    return;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    toast('Only http and https links work.');
+    return;
+  }
+  if (/\.(html?|php|aspx)$/i.test(parsed.pathname)) {
+    toast('That is a web page, not a video file. Find the direct link to the file.');
+    return;
+  }
+  setLoading(ui.linkLoad, true);
+  loadMediaUrl(parsed.toString(), true).finally(() => setLoading(ui.linkLoad, false));
+});
+
+ui.linkUrl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); ui.linkLoad.click(); }
+});

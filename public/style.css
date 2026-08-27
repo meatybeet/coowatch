@@ -2671,3 +2671,9 @@ input[type="text"]:focus {
 .conn-chip[data-grade="fair"] .conn-dot { background: #f59e0b; }
 .conn-chip[data-grade="bad"] { border-color: color-mix(in srgb, #ef4444 50%, var(--line)); color: #fca5a5; }
 .conn-chip[data-grade="bad"] .conn-dot { background: #ef4444; animation: pulse 1.6s ease-in-out infinite; }
+
+/* ---------- shared video link ---------- */
+
+#link-tools { display: flex; gap: 9px; flex: 1 1 260px; min-width: 0; }
+#link-tools[hidden] { display: none; }
+#link-url { flex: 1; min-width: 0; }

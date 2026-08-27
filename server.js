@@ -296,6 +296,7 @@ function joinPayload(session, member) {
     session: sessionInfo(session),
     peers: roster(session).filter((m) => m.id !== member.id),
     youtubeId: session.youtubeId,
+    mediaUrl: session.mediaUrl,
     streamKind: session.streamKind,
     poll: pollView(session),
     voteKick: voteKickView(session),
@@ -369,6 +370,7 @@ wss.on('connection', (ws, req) => {
         // copy in step and sends no video at all.
         source: ['youtube', 'sync'].includes(msg.source) ? msg.source : 'file',
         youtubeId: null,
+        mediaUrl: null,
         streamKind: null,
         createdAt: Date.now(),
         hostId: member.id,
@@ -462,12 +464,34 @@ wss.on('connection', (ws, req) => {
 
       case 'source': {
         if (!isHost) break;
+        // A shared link is fetched by each person from wherever it is hosted,
+        // so it only has to be a real http(s) address. Anything else is
+        // refused rather than handed to everybody's video element.
+        if (msg.url !== undefined) {
+          let clean = null;
+          if (msg.url) {
+            try {
+              const parsed = new URL(String(msg.url));
+              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                clean = parsed.toString().slice(0, 2000);
+              }
+            } catch {
+              clean = null;
+            }
+            if (!clean) {
+              send(ws, { t: 'error', message: 'That does not look like a web address.' });
+              break;
+            }
+          }
+          session.mediaUrl = clean;
+        }
         session.youtubeId = msg.youtubeId || null;
         session.streamKind = msg.kind || null;
         session.title = String(msg.title || session.title).trim().slice(0, 60);
         broadcast(session, {
           t: 'source',
           youtubeId: session.youtubeId,
+          mediaUrl: session.mediaUrl,
           kind: session.streamKind,
           title: session.title
         }, me.id);
