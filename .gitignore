@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Optional waiting-room music. Not shipped with the source: whatever you drop
+# here is almost certainly someone else's copyright, so keep it out of the repo.
+public/waiting-room.mp3
+.coowatch-pids

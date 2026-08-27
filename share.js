@@ -1,0 +1,194 @@
+// Starts CooWatch and puts it on a public HTTPS address, in one command.
+//
+//   npm run share
+//
+// The only requirement is Node. The tunnel binary is fetched by npx the first
+// time and cached after that. Nothing is installed globally, no account needed.
+
+const { spawn, execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = process.env.PORT || 3000;
+const HEALTH = `http://localhost:${PORT}/api/health`;
+const TUNNEL_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+
+const PID_FILE = path.join(__dirname, '.coowatch-pids');
+
+let server = null;
+let tunnel = null;
+let shuttingDown = false;
+
+// If a previous run was killed without its handler firing - closing the window,
+// a crash - the tunnel can outlive it. Clean that up before starting a new one.
+// PIDs get recycled, so never kill one without checking what it actually is.
+function processName(pid) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('tasklist', ['/fi', `PID eq ${pid}`, '/nh', '/fo', 'csv'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const match = out.match(/^"([^"]+)"/);
+      return match ? match[1].toLowerCase() : '';
+    }
+    return execFileSync('ps', ['-p', String(pid), '-o', 'comm='],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function reapPrevious() {
+  let pids;
+  try {
+    pids = JSON.parse(fs.readFileSync(PID_FILE, 'utf8'));
+  } catch {
+    return;
+  }
+  let cleaned = 0;
+  for (const pid of Array.isArray(pids) ? pids : []) {
+    const name = processName(pid);
+    if (!name.includes('node') && !name.includes('cloudflared')) continue;
+    killPid(pid);
+    cleaned++;
+  }
+  if (cleaned) console.log(`Cleaned up ${cleaned} leftover process(es) from a previous run.`);
+  try { fs.unlinkSync(PID_FILE); } catch {}
+}
+
+function rememberPids() {
+  const pids = [server, tunnel].filter(Boolean).map((c) => c.pid);
+  try { fs.writeFileSync(PID_FILE, JSON.stringify(pids)); } catch {}
+}
+
+function line(char) {
+  return char.repeat(64);
+}
+
+function banner(url) {
+  console.log('');
+  console.log(line('='));
+  console.log('  CooWatch is online');
+  console.log('');
+  console.log('  ' + url);
+  console.log('');
+  console.log('  Send that link to whoever is watching with you.');
+  console.log('  Open it yourself at that address too, not localhost, so the');
+  console.log('  invite button copies a link that works for them.');
+  console.log('');
+  console.log('  Keep this window open. Ctrl+C stops everything.');
+  console.log(line('='));
+  console.log('');
+}
+
+async function waitForServer(attempts = 40) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(HEALTH);
+      if (res.ok) return true;
+    } catch {
+      // not listening yet
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
+function startServer() {
+  server = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: Object.assign({}, process.env, { PORT: String(PORT) })
+  });
+  server.on('exit', (code) => {
+    if (shuttingDown) return;
+    console.error(`\nThe server stopped (exit ${code}).`);
+    stop(1);
+  });
+}
+
+function startTunnel() {
+  console.log('Opening a public address (first run downloads the tunnel, ~30s)...');
+
+  tunnel = spawn('npx', ['-y', 'cloudflared', 'tunnel', '--url', `http://localhost:${PORT}`], {
+    shell: true,
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  let found = false;
+  const scan = (chunk) => {
+    const text = chunk.toString();
+    if (found) return;
+    const match = text.match(TUNNEL_URL);
+    if (match) {
+      found = true;
+      banner(match[0]);
+    }
+  };
+
+  tunnel.stdout.on('data', scan);
+  tunnel.stderr.on('data', scan);
+
+  tunnel.on('exit', (code) => {
+    if (shuttingDown) return;
+    if (!found) {
+      console.error('\nCould not open the tunnel.');
+      console.error('Check your internet connection, then try again.');
+      console.error(`The app is still usable on this machine at http://localhost:${PORT}`);
+      return;
+    }
+    console.error(`\nThe tunnel closed (exit ${code}). Restart with: npm run share`);
+    stop(1);
+  });
+
+  tunnel.on('error', (err) => {
+    console.error('\nCould not start the tunnel: ' + err.message);
+    console.error('Make sure Node and npm are installed and on your PATH.');
+  });
+}
+
+// On Windows, npx is a wrapper: killing it leaves the real cloudflared process
+// running and the tunnel open. The whole tree has to go.
+function killPid(pid) {
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore' });
+      return;
+    } catch {
+      // fall through to the plain kill below
+    }
+  }
+  try { process.kill(pid); } catch {}
+}
+
+function killTree(child) {
+  if (!child || child.killed) return;
+  killPid(child.pid);
+}
+
+function stop(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  killTree(tunnel);
+  killTree(server);
+  try { fs.unlinkSync(PID_FILE); } catch {}
+  setTimeout(() => process.exit(code || 0), 500);
+}
+
+process.on('SIGINT', () => {
+  console.log('\nStopping...');
+  stop(0);
+});
+process.on('SIGTERM', () => stop(0));
+
+(async () => {
+  reapPrevious();
+  startServer();
+  const up = await waitForServer();
+  if (!up) {
+    console.error(`The server never came up on port ${PORT}.`);
+    console.error('Something else may be using that port. Try: PORT=3001 npm run share');
+    stop(1);
+    return;
+  }
+  startTunnel();
+  rememberPids();
+})();

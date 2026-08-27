@@ -1,0 +1,682 @@
+const path = require('path');
+const http = require('http');
+const crypto = require('crypto');
+const express = require('express');
+const { WebSocketServer } = require('ws');
+
+const PORT = process.env.PORT || 3000;
+
+// How long a member keeps their seat after their socket drops, so a page
+// reload does not look like leaving.
+const GRACE_MS = 90000;
+const VOTE_KICK_MS = 60000;
+
+const app = express();
+app.use(express.static(path.join(__dirname, 'public')));
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+const sessions = new Map(); // code -> session
+const sockets = new Map();  // ws -> { code, memberId }
+
+// No 0/O/1/I so codes stay easy to read out loud over a call.
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function makeCode() {
+  let code;
+  do {
+    code = Array.from(crypto.randomBytes(6))
+      .map((b) => ALPHABET[b % ALPHABET.length])
+      .join('');
+  } while (sessions.has(code));
+  return code;
+}
+
+function cleanName(name) {
+  return String(name || 'Guest').trim().slice(0, 24) || 'Guest';
+}
+
+function send(ws, payload) {
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
+}
+
+function broadcast(session, payload, exceptId) {
+  for (const member of session.members.values()) {
+    if (member.id === exceptId) continue;
+    send(member.ws, payload);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* shape of things                                                     */
+/* ------------------------------------------------------------------ */
+
+function hostMuted(member) {
+  return member.hostMuted || member.muteUntil > Date.now();
+}
+
+function memberView(session, member) {
+  return {
+    id: member.id,
+    name: member.name,
+    companion: member.companion,
+    online: !!member.ws,
+    isHost: session.hostId === member.id,
+    chatBlocked: member.chatBlocked,
+    selfMuted: member.selfMuted,
+    hostMuted: hostMuted(member),
+    muteUntil: member.muteUntil > Date.now() ? member.muteUntil : 0,
+    wantsHost: session.hostRequests.has(member.id)
+  };
+}
+
+function roster(session) {
+  return [...session.members.values()].map((m) => memberView(session, m));
+}
+
+function pollView(session) {
+  if (!session.poll) return null;
+  return {
+    id: session.poll.id,
+    question: session.poll.question,
+    open: session.poll.open,
+    options: session.poll.options.map((o) => ({ text: o.text, votes: o.votes.size })),
+    total: session.poll.options.reduce((n, o) => n + o.votes.size, 0)
+  };
+}
+
+function voteKickView(session) {
+  const vk = session.voteKick;
+  if (!vk) return null;
+  const target = session.members.get(vk.targetId);
+  return {
+    targetId: vk.targetId,
+    targetName: target ? target.name : 'Someone',
+    startedBy: vk.startedByName,
+    yes: vk.yes.size,
+    no: vk.no.size,
+    needed: vk.needed,
+    expiresAt: vk.expiresAt
+  };
+}
+
+function sessionInfo(session) {
+  return {
+    code: session.code,
+    title: session.title,
+    isPublic: session.isPublic,
+    hostId: session.hostId,
+    source: session.source,
+    config: session.config
+  };
+}
+
+function pushRoster(session) {
+  broadcast(session, { t: 'roster', members: roster(session), hostId: session.hostId });
+}
+
+/* ------------------------------------------------------------------ */
+/* public listing                                                      */
+/* ------------------------------------------------------------------ */
+
+app.get('/api/sessions', (req, res) => {
+  const list = [];
+  for (const session of sessions.values()) {
+    if (!session.isPublic) continue;
+    const host = session.members.get(session.hostId);
+    list.push({
+      code: session.code,
+      title: session.title,
+      source: session.source,
+      hostName: host ? host.name : 'Host',
+      count: [...session.members.values()].filter((m) => !m.companion).length,
+      createdAt: session.createdAt
+    });
+  }
+  res.json({ sessions: list.sort((a, b) => b.createdAt - a.createdAt) });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, sessions: sessions.size }));
+
+/* ------------------------------------------------------------------ */
+/* membership                                                          */
+/* ------------------------------------------------------------------ */
+
+function newMember(name, companion) {
+  return {
+    id: crypto.randomUUID(),
+    token: crypto.randomBytes(24).toString('hex'),
+    name: cleanName(name),
+    companion: !!companion,
+    ws: null,
+    chatBlocked: false,
+    hostMuted: false,
+    muteUntil: 0,
+    selfMuted: false,
+    dropTimer: null,
+    joinedAt: Date.now()
+  };
+}
+
+function destroySession(session, reason) {
+  broadcast(session, { t: 'session-closed', reason: reason || 'The host ended the session.' });
+  for (const member of session.members.values()) {
+    clearTimeout(member.dropTimer);
+    if (member.ws) sockets.delete(member.ws);
+  }
+  if (session.voteKick) clearTimeout(session.voteKick.timer);
+  sessions.delete(session.code);
+}
+
+// Picks the member who has been here longest, so the room keeps going when a
+// host disappears without handing over.
+function nextHost(session, excludeId) {
+  const candidates = [...session.members.values()]
+    .filter((m) => m.id !== excludeId && !m.companion)
+    .sort((a, b) => (b.online === a.online ? a.joinedAt - b.joinedAt : (b.ws ? 1 : 0) - (a.ws ? 1 : 0)));
+  return candidates[0] || null;
+}
+
+function setHost(session, memberId) {
+  session.hostId = memberId;
+  session.hostRequests.delete(memberId);
+  const host = session.members.get(memberId);
+  broadcast(session, { t: 'host-changed', hostId: memberId, name: host ? host.name : 'Someone' });
+  pushRoster(session);
+}
+
+function removeMember(session, member, reason) {
+  clearTimeout(member.dropTimer);
+  session.members.delete(member.id);
+  session.hostRequests.delete(member.id);
+  if (member.ws) sockets.delete(member.ws);
+
+  if (session.voteKick && session.voteKick.targetId === member.id) {
+    clearTimeout(session.voteKick.timer);
+    session.voteKick = null;
+    broadcast(session, { t: 'votekick', vote: null });
+  }
+
+  broadcast(session, { t: 'peer-leave', id: member.id, name: member.name, reason });
+
+  if (session.members.size === 0) {
+    if (session.voteKick) clearTimeout(session.voteKick.timer);
+    sessions.delete(session.code);
+    return;
+  }
+  if (session.hostId === member.id) {
+    const heir = nextHost(session, member.id);
+    if (heir) setHost(session, heir.id);
+    else destroySession(session, 'Everyone watching has left.');
+    return;
+  }
+  pushRoster(session);
+}
+
+// A dropped socket keeps its seat for a while: reloading a page should not
+// cost you the room.
+function handleDisconnect(ws) {
+  const link = sockets.get(ws);
+  sockets.delete(ws);
+  if (!link) return;
+  const session = sessions.get(link.code);
+  if (!session) return;
+  const member = session.members.get(link.memberId);
+  if (!member || member.ws !== ws) return;
+
+  member.ws = null;
+  broadcast(session, { t: 'peer-offline', id: member.id });
+  pushRoster(session);
+
+  member.dropTimer = setTimeout(() => {
+    if (member.ws) return;
+    removeMember(session, member, 'left');
+  }, GRACE_MS);
+}
+
+function attach(ws, session, member) {
+  clearTimeout(member.dropTimer);
+  member.dropTimer = null;
+  if (member.ws && member.ws !== ws) {
+    // Same person opened the room twice in one role; drop the older socket.
+    sockets.delete(member.ws);
+    send(member.ws, { t: 'session-closed', reason: 'You opened this session in another tab.' });
+  }
+  member.ws = ws;
+  sockets.set(ws, { code: session.code, memberId: member.id });
+}
+
+function joinPayload(session, member) {
+  return {
+    t: 'joined',
+    you: member.id,
+    token: member.token,
+    session: sessionInfo(session),
+    peers: roster(session).filter((m) => m.id !== member.id),
+    youtubeId: session.youtubeId,
+    streamKind: session.streamKind,
+    poll: pollView(session),
+    voteKick: voteKickView(session),
+    me: memberView(session, member)
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* vote to kick                                                        */
+/* ------------------------------------------------------------------ */
+
+function eligibleVoters(session, targetId) {
+  return [...session.members.values()].filter(
+    (m) => !m.companion && m.id !== targetId && m.ws
+  );
+}
+
+function settleVoteKick(session) {
+  const vk = session.voteKick;
+  if (!vk) return;
+  const target = session.members.get(vk.targetId);
+
+  if (vk.yes.size >= vk.needed && target) {
+    clearTimeout(vk.timer);
+    session.voteKick = null;
+    broadcast(session, { t: 'votekick', vote: null });
+    broadcast(session, { t: 'system', text: `${target.name} was voted out.` });
+    send(target.ws, { t: 'kicked', reason: 'The room voted to remove you.' });
+    session.banned.add(target.token);
+    removeMember(session, target, 'voted out');
+    return;
+  }
+  broadcast(session, { t: 'votekick', vote: voteKickView(session) });
+}
+
+/* ------------------------------------------------------------------ */
+/* socket handling                                                     */
+/* ------------------------------------------------------------------ */
+
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+  send(ws, { t: 'hello' });
+
+  ws.on('message', (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg.t !== 'string') return;
+
+    /* ---------- entering ---------- */
+
+    if (msg.t === 'create') {
+      handleDisconnect(ws);
+      const member = newMember(msg.name, false);
+      const session = {
+        code: makeCode(),
+        title: String(msg.title || 'Movie night').trim().slice(0, 60) || 'Movie night',
+        isPublic: !!msg.isPublic,
+        source: msg.source === 'youtube' ? 'youtube' : 'file',
+        youtubeId: null,
+        streamKind: null,
+        createdAt: Date.now(),
+        hostId: member.id,
+        config: { chatOpen: true, lockControls: false, muteAll: false },
+        members: new Map([[member.id, member]]),
+        banned: new Set(),
+        poll: null,
+        voteKick: null,
+        hostRequests: new Set()
+      };
+      sessions.set(session.code, session);
+      attach(ws, session, member);
+      send(ws, joinPayload(session, member));
+      return;
+    }
+
+    if (msg.t === 'join' || msg.t === 'rejoin') {
+      const code = String(msg.code || '').trim().toUpperCase();
+      const session = sessions.get(code);
+      if (!session) {
+        send(ws, { t: 'error', message: 'No session with that code. It may have ended.', fatal: true });
+        return;
+      }
+
+      if (msg.t === 'rejoin') {
+        const existing = [...session.members.values()].find((m) => m.token === msg.token);
+        if (!existing) {
+          send(ws, { t: 'error', message: 'That session moved on without you.', fatal: true });
+          return;
+        }
+        handleDisconnect(ws);
+        attach(ws, session, existing);
+        send(ws, joinPayload(session, existing));
+        broadcast(session, { t: 'peer-reset', id: existing.id }, existing.id);
+        pushRoster(session);
+        return;
+      }
+
+      if (msg.token && session.banned.has(msg.token)) {
+        send(ws, { t: 'error', message: 'You were removed from this session.', fatal: true });
+        return;
+      }
+
+      handleDisconnect(ws);
+      const member = newMember(msg.name, msg.companion);
+      session.members.set(member.id, member);
+      attach(ws, session, member);
+      send(ws, joinPayload(session, member));
+      broadcast(session, {
+        t: 'peer-join',
+        peer: memberView(session, member)
+      }, member.id);
+      pushRoster(session);
+      return;
+    }
+
+    /* ---------- in a session ---------- */
+
+    const link = sockets.get(ws);
+    if (!link) return;
+    const session = sessions.get(link.code);
+    if (!session) return;
+    const me = session.members.get(link.memberId);
+    if (!me) return;
+    const isHost = session.hostId === me.id;
+    const target = msg.id ? session.members.get(msg.id) : null;
+
+    switch (msg.t) {
+      /* ----- media plumbing ----- */
+
+      case 'signal': {
+        const peer = session.members.get(msg.to);
+        if (peer) send(peer.ws, { t: 'signal', from: me.id, data: msg.data });
+        break;
+      }
+
+      case 'progress': {
+        if (!isHost) break;
+        broadcast(session, {
+          t: 'progress',
+          time: Number(msg.time) || 0,
+          duration: Number(msg.duration) || 0,
+          paused: !!msg.paused
+        }, me.id);
+        break;
+      }
+
+      case 'source': {
+        if (!isHost) break;
+        session.youtubeId = msg.youtubeId || null;
+        session.streamKind = msg.kind || null;
+        session.title = String(msg.title || session.title).trim().slice(0, 60);
+        broadcast(session, {
+          t: 'source',
+          youtubeId: session.youtubeId,
+          kind: session.streamKind,
+          title: session.title
+        }, me.id);
+        break;
+      }
+
+      case 'control': {
+        if (session.config.lockControls && !isHost) {
+          send(ws, { t: 'error', message: 'The host locked the playback controls.' });
+          break;
+        }
+        broadcast(session, {
+          t: 'control',
+          from: me.id,
+          name: me.name,
+          action: msg.action,
+          time: Number(msg.time) || 0
+        }, me.id);
+        break;
+      }
+
+      /* ----- talking ----- */
+
+      case 'chat': {
+        const text = String(msg.text || '').slice(0, 500);
+        if (!text.trim()) break;
+        if (me.chatBlocked) {
+          send(ws, { t: 'error', message: 'The host blocked you from the chat.' });
+          break;
+        }
+        if (!session.config.chatOpen && !isHost) {
+          send(ws, { t: 'error', message: 'The chat is closed.' });
+          break;
+        }
+        broadcast(session, {
+          t: 'chat', from: me.id, name: me.name, text, ts: Date.now()
+        }, me.id);
+        break;
+      }
+
+      case 'reaction': {
+        if (me.chatBlocked) break;
+        broadcast(session, {
+          t: 'reaction', from: me.id, name: me.name, emoji: String(msg.emoji || '').slice(0, 8)
+        }, me.id);
+        break;
+      }
+
+      case 'selfMute': {
+        me.selfMuted = !!msg.muted;
+        pushRoster(session);
+        break;
+      }
+
+      /* ----- leaving ----- */
+
+      case 'leave': {
+        if (isHost && msg.destroy) {
+          destroySession(session, 'The host ended the session.');
+          break;
+        }
+        if (isHost && msg.transferTo && session.members.has(msg.transferTo)) {
+          setHost(session, msg.transferTo);
+        }
+        removeMember(session, me, 'left');
+        break;
+      }
+
+      /* ----- host powers ----- */
+
+      case 'host:config': {
+        if (!isHost) break;
+        if (typeof msg.chatOpen === 'boolean') session.config.chatOpen = msg.chatOpen;
+        if (typeof msg.lockControls === 'boolean') session.config.lockControls = msg.lockControls;
+        if (typeof msg.muteAll === 'boolean') session.config.muteAll = msg.muteAll;
+        broadcast(session, { t: 'config', config: session.config, by: me.name });
+        pushRoster(session);
+        break;
+      }
+
+      case 'host:mute': {
+        if (!isHost || !target || target.id === me.id) break;
+        const seconds = Number(msg.seconds) || 0;
+        if (seconds > 0) {
+          target.muteUntil = Date.now() + seconds * 1000;
+          target.hostMuted = false;
+        } else {
+          target.hostMuted = true;
+          target.muteUntil = 0;
+        }
+        send(target.ws, { t: 'you-muted', seconds, by: me.name });
+        pushRoster(session);
+        break;
+      }
+
+      case 'host:unmute': {
+        if (!isHost || !target) break;
+        // Deliberately does not touch selfMuted: only they can undo that.
+        target.hostMuted = false;
+        target.muteUntil = 0;
+        send(target.ws, { t: 'you-unmuted', by: me.name });
+        pushRoster(session);
+        break;
+      }
+
+      case 'host:blockChat': {
+        if (!isHost || !target || target.id === me.id) break;
+        target.chatBlocked = !!msg.blocked;
+        send(target.ws, { t: 'chat-block', blocked: target.chatBlocked, by: me.name });
+        pushRoster(session);
+        break;
+      }
+
+      case 'host:kick': {
+        if (!isHost || !target || target.id === me.id) break;
+        session.banned.add(target.token);
+        send(target.ws, { t: 'kicked', reason: 'The host removed you from the session.' });
+        broadcast(session, { t: 'system', text: `${target.name} was removed by the host.` });
+        removeMember(session, target, 'removed');
+        break;
+      }
+
+      case 'host:transfer': {
+        if (!isHost || !target || target.companion) break;
+        setHost(session, target.id);
+        broadcast(session, { t: 'system', text: `${target.name} is now the host.` });
+        break;
+      }
+
+      /* ----- asking for the host role ----- */
+
+      case 'hostRequest': {
+        if (isHost || me.companion) break;
+        session.hostRequests.add(me.id);
+        const host = session.members.get(session.hostId);
+        send(host && host.ws, { t: 'host-request', from: me.id, name: me.name });
+        pushRoster(session);
+        break;
+      }
+
+      case 'host:requestResponse': {
+        if (!isHost || !target) break;
+        session.hostRequests.delete(target.id);
+        if (msg.accept) {
+          setHost(session, target.id);
+          broadcast(session, { t: 'system', text: `${target.name} is now the host.` });
+        } else {
+          send(target.ws, { t: 'system', text: 'The host declined your request.' });
+          pushRoster(session);
+        }
+        break;
+      }
+
+      /* ----- polls ----- */
+
+      case 'host:poll': {
+        if (!isHost) break;
+        const question = String(msg.question || '').trim().slice(0, 140);
+        const options = (Array.isArray(msg.options) ? msg.options : [])
+          .map((o) => String(o || '').trim().slice(0, 60))
+          .filter(Boolean)
+          .slice(0, 4);
+        if (!question || options.length < 2) {
+          send(ws, { t: 'error', message: 'A poll needs a question and at least two options.' });
+          break;
+        }
+        session.poll = {
+          id: crypto.randomUUID(),
+          question,
+          open: true,
+          options: options.map((text) => ({ text, votes: new Set() }))
+        };
+        broadcast(session, { t: 'poll', poll: pollView(session) });
+        break;
+      }
+
+      case 'poll:vote': {
+        const poll = session.poll;
+        if (!poll || !poll.open) break;
+        const index = Number(msg.option);
+        if (!(index >= 0 && index < poll.options.length)) break;
+        for (const option of poll.options) option.votes.delete(me.id);
+        poll.options[index].votes.add(me.id);
+        broadcast(session, { t: 'poll', poll: pollView(session) });
+        break;
+      }
+
+      case 'host:pollClose': {
+        if (!isHost || !session.poll) break;
+        session.poll.open = false;
+        broadcast(session, { t: 'poll', poll: pollView(session) });
+        break;
+      }
+
+      case 'host:pollClear': {
+        if (!isHost) break;
+        session.poll = null;
+        broadcast(session, { t: 'poll', poll: null });
+        break;
+      }
+
+      /* ----- vote to kick ----- */
+
+      case 'votekick:start': {
+        if (!target || target.id === me.id || me.companion) break;
+        if (session.hostId === target.id) {
+          send(ws, { t: 'error', message: 'The host cannot be voted out.' });
+          break;
+        }
+        if (session.voteKick) break;
+        const voters = eligibleVoters(session, target.id);
+        if (voters.length < 2) {
+          send(ws, { t: 'error', message: 'A vote needs at least three people watching.' });
+          break;
+        }
+        session.voteKick = {
+          targetId: target.id,
+          startedByName: me.name,
+          yes: new Set([me.id]),
+          no: new Set(),
+          needed: Math.floor(voters.length / 2) + 1,
+          expiresAt: Date.now() + VOTE_KICK_MS,
+          timer: setTimeout(() => {
+            session.voteKick = null;
+            broadcast(session, { t: 'votekick', vote: null });
+            broadcast(session, { t: 'system', text: 'The vote expired.' });
+          }, VOTE_KICK_MS)
+        };
+        broadcast(session, { t: 'system', text: `${me.name} started a vote to remove ${target.name}.` });
+        settleVoteKick(session);
+        break;
+      }
+
+      case 'votekick:vote': {
+        const vk = session.voteKick;
+        if (!vk || me.companion || me.id === vk.targetId) break;
+        vk.yes.delete(me.id);
+        vk.no.delete(me.id);
+        (msg.yes ? vk.yes : vk.no).add(me.id);
+        settleVoteKick(session);
+        break;
+      }
+    }
+  });
+
+  ws.on('close', () => handleDisconnect(ws));
+  ws.on('error', () => handleDisconnect(ws));
+});
+
+// Drop half-open connections so ghost members do not linger in a room.
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 30000);
+
+wss.on('close', () => clearInterval(heartbeat));
+
+server.listen(PORT, () => {
+  console.log(`CooWatch running on http://localhost:${PORT}`);
+});
