@@ -36,12 +36,61 @@ enough.
 > The tunnel gives you real HTTPS, which is what makes the mic, screen sharing
 > and the installable app work at all.
 
+## Sending it to a friend
+
+They do not need to know anything about the code. Send them the folder — a zip,
+or the GitHub link — and tell them this:
+
+**They need [Node.js](https://nodejs.org) 18 or newer.** Nothing else. No
+account, no Docker, no database, no build tools.
+
+Then, from inside the folder:
+
+```bash
+npm install
+```
+
+```bash
+npm run share
+```
+
+That prints a public address like `https://tidy-forest-1234.trycloudflare.com`.
+Whoever runs it is the host: they open that address themselves, tap the session
+code to copy the invite link, and send it on.
+
+Things worth telling them up front:
+
+- **Open the printed address, not `localhost`.** The invite button copies
+  whatever address the page is on, so from localhost they would send a link that
+  only works on their own machine.
+- **The address changes every run.** Send a fresh link each time.
+- **Keep the window open.** Closing it ends the session. Ctrl+C stops cleanly.
+- **The first run takes about 30 seconds longer** while the tunnel binary is
+  downloaded. After that it is cached.
+- **Wear headphones** if they are hosting a file, or the film's audio goes back
+  out through their microphone as an echo.
+- **The music file is not in the repository.** If you want them to have it, send
+  the MP3 separately and tell them to save it as `public/waiting-room.mp3`. The
+  app works fine without it.
+
+If a tunnel is ever left running after a crash, the next `npm run share` finds
+and closes it before starting a new one.
+
 ## Optional: waiting room music
 
 Drop any MP3 at `public/waiting-room.mp3` and it loops on the home screen and in
-a room with nothing playing yet. It is not included in this repository, and the
-app works fine without it — the toggle simply hides itself.
+a room with nothing playing yet. It stops as soon as a video is loaded and does
+not come back when you pause mid-episode. The note button toggles it and the
+choice is remembered per device.
 
+It is deliberately **not** included in this repository — whatever you drop there
+is most likely someone else's copyright. The app works fine without it: the
+toggle simply hides itself.
+
+Browsers refuse to start audio before the page has been interacted with, so on a
+cold load it begins at your first click or key press rather than instantly.
+
+Microphones start **muted**. Nobody is broadcast before they choose to be.
 
 
 ## Two ways to watch
@@ -67,21 +116,15 @@ loud. Tapping the code in a room copies the invite link.
 A session outlives any one connection. Reloading keeps your seat, and a host who
 leaves either hands the room over or ends it deliberately — see **Running a room**.
 
-## Running it locally
-
-```bash
-npm install
-```
+## Running it on one machine
 
 ```bash
 npm start
 ```
 
-Then open http://localhost:3000.
-
-`localhost` counts as a secure origin, so the microphone and screen capture work
-there without HTTPS. On any other machine you need real HTTPS, or the browser will
-refuse to hand over the mic.
+Then open http://localhost:3000. `localhost` counts as a secure origin, so the
+microphone and screen capture work there without HTTPS. Any *other* address
+needs real HTTPS, which is what `npm run share` gives you.
 
 ## Deploying
 
@@ -149,19 +192,6 @@ To get ffmpeg on Windows: `winget install Gyan.FFmpeg`, then open a new terminal
 **Group rooms.** Everyone hears everyone, but the video only ever comes from the
 host, and the host uploads one copy per viewer. Two or three people is comfortable;
 much more than that will saturate a home connection.
-
-## Waiting room music
-
-`public/waiting-room.mp3` is optional and not part of this repository - drop
-any MP3 there. It loops on the home screen and in a room that has
-nothing playing yet. It stops as soon as a video is loaded and does not come
-back when you pause mid-episode. The note button toggles it, and the choice is
-remembered per device.
-
-Browsers refuse to start audio before the page has been interacted with, so on
-a cold load it begins at the first click or key press rather than instantly.
-
-Microphones start **muted**. Nobody is broadcast before they choose to be.
 
 ## Layout
 
