@@ -45,6 +45,7 @@ const ui = {
   controls: $('controls'), liveBadge: $('live-badge'),
   ytTools: $('yt-tools'), ytUrl: $('yt-url'), ytLoad: $('yt-load'),
   peers: $('peers'), chatLog: $('chat-log'), chatForm: $('chat-form'), chatInput: $('chat-input'),
+  stickerBtn: $('sticker-btn'), stickerInput: $('sticker-input'),
   toast: $('toast'),
   waitingAudio: $('waiting-audio'), musicBtn: $('music-btn'), musicBtnHome: $('music-btn-home'),
   profileBtn: $('profile-btn'), profileAv: $('profile-av'), profileName: $('profile-name'),
@@ -150,7 +151,7 @@ function sysMessage(text) {
 
 // The sidebar is not rendered in fullscreen, so messages surface over the
 // picture instead and fade out on their own.
-function popMessage(who, text, kind) {
+function popMessage(who, text, kind, image) {
   const pop = document.createElement('div');
   pop.className = 'chat-pop' + (kind ? ' ' + kind : '');
   if (who) {
@@ -159,7 +160,14 @@ function popMessage(who, text, kind) {
     name.textContent = who;
     pop.appendChild(name);
   }
-  pop.appendChild(document.createTextNode(text));
+  if (image) {
+    const img = document.createElement('img');
+    img.className = 'sticker';
+    img.src = image;
+    img.alt = 'sticker';
+    pop.appendChild(img);
+  }
+  if (text) pop.appendChild(document.createTextNode(text));
   ui.chatOverlay.appendChild(pop);
   // Keep the stack shallow enough to stay out of the way of the film.
   while (ui.chatOverlay.children.length > 5) ui.chatOverlay.firstChild.remove();
@@ -188,7 +196,9 @@ function renderBody(text) {
 }
 
 function chatMessage(who, text, mine, meta) {
-  historyLog('chat', mine ? (ui.name.value.trim() || 'You') : who, text);
+  const hasImage = !!(meta && meta.image);
+  historyLog('chat', mine ? (ui.name.value.trim() || 'You') : who,
+    hasImage ? (text ? text + ' [picture]' : '[picture]') : text);
   const li = document.createElement('li');
   if (mine) li.classList.add('me');
   if (!mine && mentionsMe(text)) li.classList.add('tagged');
@@ -212,7 +222,16 @@ function chatMessage(who, text, mine, meta) {
     li.appendChild(strong);
   }
 
-  li.appendChild(renderBody(text));
+  if (meta && meta.image) {
+    const img = document.createElement('img');
+    img.className = 'sticker';
+    img.src = meta.image;
+    img.alt = text || 'sticker';
+    img.loading = 'lazy';
+    li.appendChild(img);
+  }
+
+  if (text) li.appendChild(renderBody(text));
 
   const time = document.createElement('span');
   time.className = 'msg-time';
@@ -229,7 +248,7 @@ function chatMessage(who, text, mine, meta) {
 
   ui.chatLog.appendChild(li);
   ui.chatLog.scrollTop = ui.chatLog.scrollHeight;
-  popMessage(mine ? null : who, text, mine ? 'me' : '');
+  popMessage(mine ? null : who, text, mine ? 'me' : '', meta && meta.image);
 }
 
 function setLoading(btn, on) {
@@ -3048,4 +3067,110 @@ ui.helpClose.addEventListener('click', closeHelp);
 ui.helpScrim.addEventListener('click', closeHelp);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !ui.helpDialog.hidden) closeHelp();
+});
+
+
+/* ------------------------------------------------------------------ */
+/* pictures and stickers in the chat                                   */
+/* ------------------------------------------------------------------ */
+
+const STICKER_MAX_EDGE = 320;
+const STICKER_MAX_CHARS = 200000;
+
+// Shrink and re-encode before sending. A photo straight off a phone is several
+// megabytes; nobody needs that to say "look at this face".
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) return reject(new Error('not an image'));
+
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, STICKER_MAX_EDGE / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+      // WebP keeps transparency, which is what makes a sticker a sticker.
+      const type = 'image/webp';
+      let quality = 0.85;
+      let out = canvas.toDataURL(type, quality);
+      if (out.indexOf('data:image/webp') !== 0) out = canvas.toDataURL('image/png');
+
+      while (out.length > STICKER_MAX_CHARS && quality > 0.35) {
+        quality -= 0.15;
+        out = canvas.toDataURL(type, quality);
+      }
+      if (out.length > STICKER_MAX_CHARS) return reject(new Error('too big'));
+      resolve(out);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('could not read that image'));
+    };
+    img.src = url;
+  });
+}
+
+async function sendSticker(file) {
+  if (!canChat()) return;
+  setLoading(ui.stickerBtn, true);
+  try {
+    const image = await shrinkImage(file);
+    const caption = ui.chatInput.value.trim();
+    const payload = { t: 'chat', text: caption, image };
+    if (replyTarget) payload.replyTo = replyTarget;
+    send(payload);
+    chatMessage(myName() || 'You', caption, true, {
+      id: 'local-' + Date.now(),
+      ts: Date.now(),
+      image,
+      replyTo: replyTarget
+    });
+    ui.chatInput.value = '';
+    clearReply();
+  } catch (err) {
+    toast(err.message === 'too big' ? 'That picture is too big to send.' : 'Could not read that picture.');
+  } finally {
+    setLoading(ui.stickerBtn, false);
+  }
+}
+
+ui.stickerBtn.addEventListener('click', () => ui.stickerInput.click());
+
+ui.stickerInput.addEventListener('change', () => {
+  const file = ui.stickerInput.files && ui.stickerInput.files[0];
+  ui.stickerInput.value = '';
+  if (file) sendSticker(file);
+});
+
+// Long-press paste on a phone, or Ctrl+V on a desktop, after copying an image
+// from anywhere else.
+ui.chatInput.addEventListener('paste', (e) => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const item of items) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (!file) continue;
+    e.preventDefault();
+    sendSticker(file);
+    return;
+  }
+});
+
+// Dropping an image onto the chat works too.
+ui.chatLog.addEventListener('dragover', (e) => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault();
+});
+
+ui.chatLog.addEventListener('drop', (e) => {
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  e.preventDefault();
+  sendSticker(file);
 });

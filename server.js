@@ -12,12 +12,18 @@ const GRACE_MS = 90000;
 const VOTE_KICK_MS = 60000;
 // Generous rather than unlimited: past this a poll stops being readable.
 const MAX_POLL_OPTIONS = 20;
+// A base64 data URL is about a third bigger than the bytes it carries, so
+// this lands near 150KB of actual image.
+const MAX_IMAGE_CHARS = 200000;
+const IMAGE_URL = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// Enough for a shrunk sticker plus signalling, far short of anything that
+// could be used to push the process over.
+const wss = new WebSocketServer({ server, maxPayload: 512 * 1024 });
 
 const sessions = new Map(); // code -> session
 const sockets = new Map();  // ws -> { code, memberId }
@@ -485,7 +491,16 @@ wss.on('connection', (ws, req) => {
 
       case 'chat': {
         const text = String(msg.text || '').slice(0, 500);
-        if (!text.trim()) break;
+        let image = null;
+        if (typeof msg.image === 'string' && msg.image) {
+          if (!IMAGE_URL.test(msg.image)) break;
+          if (msg.image.length > MAX_IMAGE_CHARS) {
+            send(ws, { t: 'error', message: 'That image is too big to send.' });
+            break;
+          }
+          image = msg.image;
+        }
+        if (!text.trim() && !image) break;
         if (me.chatBlocked) {
           send(ws, { t: 'error', message: 'The host blocked you from the chat.' });
           break;
@@ -508,6 +523,7 @@ wss.on('connection', (ws, req) => {
           from: me.id,
           name: me.name,
           text,
+          image,
           replyTo,
           ts: Date.now()
         }, me.id);

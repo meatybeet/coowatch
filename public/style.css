@@ -2611,3 +2611,30 @@ input[type="text"]:focus {
 .ban-who .meta { font-size: 11.5px; }
 .ban-list button { padding: 5px 12px; font-size: 12.5px; background: var(--raise); border: 1px solid var(--line); }
 .ban-list button:hover { border-color: color-mix(in srgb, var(--accent-secondary) 55%, transparent); }
+
+/* ---------- pictures and stickers in chat ---------- */
+
+.sticker-btn { width: 40px; height: 40px; flex-shrink: 0; }
+
+.chat-log .sticker {
+  display: block;
+  max-width: 190px;
+  max-height: 190px;
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  margin: 2px 0;
+}
+.chat-log li:has(.sticker) { background: none; border-color: transparent; padding: 4px 0; }
+.chat-log li.me:has(.sticker) { background: none; border-color: transparent; }
+
+.chat-pop .sticker {
+  display: block;
+  max-width: 150px;
+  max-height: 150px;
+  border-radius: 10px;
+}
+
+@media (max-width: 540px) {
+  .chat-log .sticker { max-width: 150px; max-height: 150px; }
+}

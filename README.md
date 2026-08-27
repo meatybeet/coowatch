@@ -252,7 +252,16 @@ connection: a connection only carries video if it was created while that person
 was the host, so the new host needs fresh ones to be able to send anything.
 
 **Chat** - messages carry a time, `@name` tags someone, and clicking a message
-replies to it. A short tone plays when you are tagged, muted, unmuted, blocked
+replies to it. The picture button sends an image or a sticker from the device,
+and pasting or dropping one does the same. Images are shrunk to 320px and
+re-encoded as WebP before they leave the browser, so transparency survives and
+a phone photo does not. Only the fact that a picture was sent goes into the
+history, never the pixels.
+
+WhatsApp's own sticker library cannot be reached from a web page - those files
+live inside WhatsApp's private storage and no browser can read another app's
+data. Saving a sticker to the gallery, or sharing it to Files, puts it
+somewhere the picture button can find. A short tone plays when you are tagged, muted, unmuted, blocked
 or unblocked, and when someone asks to host. Everyone's avatar colour is
 derived from their name, so the same person looks the same on every device.
 
