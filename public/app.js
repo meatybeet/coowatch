@@ -10,7 +10,17 @@ const RTC_CONFIG = {
   ]
 };
 
-const EMOJIS = ['\u{1F602}', '\u{1F62E}', '❤️', '\u{1F525}', '\u{1F62D}', '\u{1F44F}', '\u{1F631}', '\u{1F914}'];
+const EMOJIS = [
+  '\u{1F602}', '\u{1F62E}', '❤️', '\u{1F525}', '\u{1F62D}', '\u{1F44F}',
+  '\u{1F631}', '\u{1F914}', '\u{1F612}', '\u{1F918}', '\u{1F44D}', '\u{1F44E}',
+  '\u{1F595}', '\u{1F923}', '\u{1F60D}', '\u{1F644}', '\u{1F62C}', '\u{1F92F}',
+  '\u{1F634}', '\u{1F440}', '\u{1F480}', '\u{1F921}', '\u{1F64C}', '\u{2728}',
+  '\u{1F37F}', '\u{1F389}', '\u{1F605}', '\u{1F633}', '\u{1F971}', '\u{1F976}',
+  '\u{1F975}', '\u{1F44B}', '\u{1F64F}'
+];
+
+// Only the first few sit on the bar; the rest live behind the picker.
+const QUICK_EMOJIS = 6;
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,6 +38,7 @@ const ui = {
   overlay: $('overlay'), overlayText: $('overlay-text'), overlayBtn: $('overlay-btn'),
   overlaySpinner: $('overlay-spinner'),
   reactions: $('reactions'), reactionBar: $('reaction-bar'), chatOverlay: $('chat-overlay'),
+  emojiPop: $('emoji-pop'), emojiMore: null,
   playBtn: $('play-btn'), seek: $('seek'), timeNow: $('time-now'), timeTotal: $('time-total'),
   hostTools: $('host-tools'), pickFile: $('pick-file'), fileInput: $('file-input'),
   shareBtn: $('share-btn'), shareLabel: $('share-label'),
@@ -794,6 +805,7 @@ function goHome() {
   clearReply();
   closeMentions();
   closeHelp();
+  closeEmojiPop();
   state.duration = 0;
   state.position = 0;
   state.paused = true;
@@ -1728,7 +1740,7 @@ ui.chatForm.addEventListener('submit', (e) => {
   closeMentions();
 });
 
-for (const emoji of EMOJIS) {
+function emojiButton(emoji) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.textContent = emoji;
@@ -1736,9 +1748,50 @@ for (const emoji of EMOJIS) {
   btn.addEventListener('click', () => {
     floatEmoji(emoji);
     send({ t: 'reaction', emoji });
+    closeEmojiPop();
   });
-  ui.reactionBar.appendChild(btn);
+  return btn;
 }
+
+function closeEmojiPop() {
+  ui.emojiPop.hidden = true;
+  if (ui.emojiMore) ui.emojiMore.setAttribute('aria-expanded', 'false');
+}
+
+function buildReactions() {
+  ui.reactionBar.innerHTML = '';
+  for (const emoji of EMOJIS.slice(0, QUICK_EMOJIS)) {
+    ui.reactionBar.appendChild(emojiButton(emoji));
+  }
+  if (EMOJIS.length <= QUICK_EMOJIS) return;
+
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'emoji-more';
+  more.textContent = '…';
+  more.setAttribute('aria-label', 'More reactions');
+  more.setAttribute('aria-expanded', 'false');
+  more.title = 'More reactions';
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opening = ui.emojiPop.hidden;
+    ui.emojiPop.hidden = !opening;
+    more.setAttribute('aria-expanded', String(opening));
+  });
+  ui.reactionBar.appendChild(more);
+  ui.emojiMore = more;
+
+  ui.emojiPop.innerHTML = '';
+  for (const emoji of EMOJIS) ui.emojiPop.appendChild(emojiButton(emoji));
+}
+
+buildReactions();
+
+ui.emojiPop.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => { if (!ui.emojiPop.hidden) closeEmojiPop(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !ui.emojiPop.hidden) closeEmojiPop();
+});
 
 function floatEmoji(emoji) {
   const el = document.createElement('div');

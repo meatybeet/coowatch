@@ -2483,3 +2483,107 @@ input[type="text"]:focus {
   font-size: 12px;
   color: var(--text);
 }
+
+/* ---------- emoji picker ---------- */
+
+.reaction-wrap { position: relative; flex-shrink: 0; }
+
+.emoji-more {
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px 14px;
+  letter-spacing: 1px;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.emoji-more:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent-secondary) 55%, transparent); }
+.emoji-more[aria-expanded="true"] {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent-secondary) 65%, transparent);
+  background: color-mix(in srgb, var(--accent-secondary) 16%, transparent);
+}
+
+.emoji-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 25;
+  width: min(320px, calc(100vw - 32px));
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  background: #161b2e;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 54px -22px rgba(0, 0, 0, 1);
+  scrollbar-width: thin;
+}
+.emoji-pop[hidden] { display: none; }
+.emoji-pop button {
+  font-size: 22px;
+  line-height: 1;
+  padding: 8px 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.emoji-pop button:hover {
+  background: var(--raise);
+  border-color: color-mix(in srgb, var(--accent-secondary) 45%, transparent);
+  transform: scale(1.12);
+}
+
+/* In fullscreen the bar is pinned to the bottom, so open the picker upward
+   from there rather than off the top of the screen. */
+.stage:fullscreen .emoji-pop { bottom: calc(100% + 8px); }
+
+/* ---------- readable chat on a phone ---------- */
+
+@media (max-width: 859px) {
+  /* Cap the picture so the conversation is not squeezed into a sliver.
+     object-fit keeps the video itself letterboxed inside. */
+  .video-wrap {
+    max-height: 36vh;
+  }
+
+  .side {
+    min-height: 42vh;
+  }
+
+  .side-header, .chat-header {
+    padding: 8px 14px 5px;
+    font-size: 10px;
+  }
+
+  .peers {
+    padding: 0 14px 8px;
+    gap: 6px;
+  }
+  .peers span { padding: 3px 10px 3px 4px; font-size: 12px; }
+  .peers .av { width: 19px; height: 19px; font-size: 10px; }
+
+  .chat-log {
+    padding: 10px 14px;
+    gap: 8px;
+    min-height: 110px;
+    font-size: 15px;
+  }
+  .chat-log li { font-size: 15px; max-width: 94%; padding: 9px 13px; }
+  .chat-log li.sys { font-size: 13px; }
+  .msg-time { font-size: 11px; }
+
+  .reaction-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .reaction-bar::-webkit-scrollbar { display: none; }
+
+  .host-tools { gap: 6px; }
+}
+
+@media (max-width: 540px) {
+  .chat-form { padding: 10px 12px; }
+  .chat-form input { font-size: 16px; }
+  .emoji-pop { width: calc(100vw - 28px); max-height: 200px; }
+}
