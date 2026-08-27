@@ -31,6 +31,41 @@ changes each run, so send a fresh link each time.
 If you are both on the same network, `npm start` and http://localhost:3000 is
 enough.
 
+## A permanent address on your own domain
+
+The address above changes every run, which is fine between friends and annoying
+for anything else. If you own a domain, a **named tunnel** gives you one fixed
+hostname forever.
+
+You need the domain's nameservers pointed at Cloudflare, which is free. Then,
+once:
+
+```bash
+npx cloudflared tunnel login
+```
+
+```bash
+npx cloudflared tunnel create coowatch
+```
+
+```bash
+npx cloudflared tunnel route dns coowatch watch.yourdomain.com
+```
+
+Then tell CooWatch to use it by creating `tunnel.json` next to `server.js`:
+
+```json
+{ "tunnel": "coowatch", "hostname": "watch.yourdomain.com" }
+```
+
+From then on `npm run share` connects that tunnel instead of asking for a
+throwaway one, and the address is always `https://watch.yourdomain.com`. The
+file is gitignored, since the tunnel is yours.
+
+Redirecting your own domain at whatever random address the tunnel produced is
+the other way round, but it needs something always online to hold the current
+address and keep it updated. A named tunnel is the same idea with none of that.
+
 > **Why a tunnel and not just localhost?** Browsers refuse to hand over a
 > microphone or a screen on a plain `http://` address unless it is localhost.
 > The tunnel gives you real HTTPS, which is what makes the mic, screen sharing

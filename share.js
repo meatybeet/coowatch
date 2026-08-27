@@ -10,6 +10,22 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
+
+// A named Cloudflare tunnel gives a permanent address on your own domain
+// instead of a new random one every run. Set it up once (see the README), put
+// the name in tunnel.json or COOWATCH_TUNNEL, and this uses it automatically.
+function namedTunnel() {
+  if (process.env.COOWATCH_TUNNEL) {
+    return { name: process.env.COOWATCH_TUNNEL, hostname: process.env.COOWATCH_HOSTNAME || '' };
+  }
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'tunnel.json'), 'utf8'));
+    if (cfg && cfg.tunnel) return { name: cfg.tunnel, hostname: cfg.hostname || '' };
+  } catch {
+    // no config, so fall back to a throwaway address
+  }
+  return null;
+}
 const HEALTH = `http://localhost:${PORT}/api/health`;
 const TUNNEL_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 
@@ -106,14 +122,23 @@ function startServer() {
 }
 
 function startTunnel() {
-  console.log('Opening a public address (first run downloads the tunnel, ~30s)...');
+  const named = namedTunnel();
+  const args = named
+    ? ['-y', 'cloudflared', 'tunnel', 'run', '--url', `http://localhost:${PORT}`, named.name]
+    : ['-y', 'cloudflared', 'tunnel', '--url', `http://localhost:${PORT}`];
 
-  tunnel = spawn('npx', ['-y', 'cloudflared', 'tunnel', '--url', `http://localhost:${PORT}`], {
-    shell: true,
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
+  console.log(named
+    ? `Connecting the "${named.name}" tunnel...`
+    : 'Opening a public address (first run downloads the tunnel, ~30s)...');
+
+  tunnel = spawn('npx', args, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
   let found = false;
+  if (named && named.hostname) {
+    // A named tunnel prints no URL, because it always has the same one.
+    found = true;
+    setTimeout(() => banner('https://' + named.hostname.replace(/^https?:[/][/]/, '')), 2500);
+  }
   const scan = (chunk) => {
     const text = chunk.toString();
     if (found) return;

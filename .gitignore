@@ -8,3 +8,4 @@ Thumbs.db
 # here is almost certainly someone else's copyright, so keep it out of the repo.
 public/waiting-room.mp3
 .coowatch-pids
+tunnel.json
