@@ -1,6 +1,7 @@
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
+const dns = require('dns').promises;
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
@@ -58,6 +59,74 @@ function bannableIp(ip) {
   const bare = ip.replace(/^::ffff:/, '');
   if (bare === '127.0.0.1' || bare === '::1' || bare === 'localhost') return null;
   return bare;
+}
+
+// Checking a link means this process fetches an address someone typed, so it
+// must never be talked into reaching something on the private network. Every
+// hop is resolved and checked before it is followed.
+function isPublicAddress(ip) {
+  const bare = String(ip).replace(/^::ffff:/, '');
+  if (/^(127\.|0\.|10\.|169\.254\.|192\.168\.)/.test(bare)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(bare)) return false;
+  if (bare === '::1' || bare === '::') return false;
+  if (/^f[cd]/i.test(bare) || /^fe[89ab]/i.test(bare)) return false;
+  return true;
+}
+
+async function resolvesPublicly(hostname) {
+  try {
+    const found = await dns.lookup(hostname, { all: true });
+    return found.length > 0 && found.every((entry) => isPublicAddress(entry.address));
+  } catch {
+    return false;
+  }
+}
+
+// Follows redirects by hand so each destination can be vetted in turn.
+async function inspectUrl(raw, hops = 3) {
+  let target;
+  try {
+    target = new URL(raw);
+  } catch {
+    return { ok: false, reason: 'That is not a valid web address.' };
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return { ok: false, reason: 'Only http and https addresses work.' };
+  }
+  if (!(await resolvesPublicly(target.hostname))) {
+    return { ok: false, reason: 'That address does not point anywhere public.' };
+  }
+
+  let res;
+  try {
+    res = await fetch(target, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch {
+    return { ok: false, reason: 'Could not reach that address.' };
+  }
+
+  if (res.status >= 300 && res.status < 400) {
+    const next = res.headers.get('location');
+    if (!next || hops <= 0) return { ok: false, reason: 'That address redirects too many times.' };
+    return inspectUrl(new URL(next, target).toString(), hops - 1);
+  }
+
+  const type = (res.headers.get('content-type') || '').toLowerCase();
+  if (type.startsWith('video/')) return { ok: true, contentType: type };
+  if (type.startsWith('text/html')) {
+    return {
+      ok: false, contentType: type,
+      reason: 'That is a web page, not a video file. Services like SwissTransfer or WeTransfer give you a download page - the file itself has to be downloaded first, then shared with "we both have the file".'
+    };
+  }
+  return {
+    ok: false, contentType: type,
+    reason: `That address serves ${type || 'something unrecognised'}, not a video.`
+  };
 }
 
 function cleanName(name) {
@@ -348,7 +417,7 @@ wss.on('connection', (ws, req) => {
   ws.on('pong', () => { ws.isAlive = true; });
   send(ws, { t: 'hello' });
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -598,6 +667,13 @@ wss.on('connection', (ws, req) => {
 
       // Nothing can drive a page from another site, so the room counts down
       // together instead and everyone presses play on the same beat.
+      case 'checkUrl': {
+        if (!isHost) break;
+        const verdict = await inspectUrl(String(msg.url || ''));
+        send(ws, { t: 'urlCheck', url: msg.url, ...verdict });
+        break;
+      }
+
       case 'countdown': {
         if (!isHost) break;
         broadcast(session, { t: 'countdown', from: me.name, at: Date.now() + 3200 });

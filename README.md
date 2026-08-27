@@ -167,11 +167,22 @@ everyone opening their own file. Each person then fetches it from wherever it
 is hosted and the clocks are kept together as usual, which is gentle on a weak
 connection because nobody is pulling the video from the room's host.
 
+Paste one and the server checks what is actually at the other end before it
+reaches anybody's player, so a download page is named as a download page rather
+than failing as a black rectangle. That check resolves every redirect it
+follows and refuses anything that does not point somewhere public, so a link
+cannot be used to make the server fetch something on your own network.
+
 That has to be the address of the file itself - something ending in `.mp4` or
 `.webm` that serves the actual bytes. A page that merely contains a player is
 not a video, and a player embedded from another site cannot be driven from
 here, so there would be nothing to keep in step. File hosts that only give you
 a landing page will not work; hosting that hands out a real file link will.
+
+Transfer services are the common trap here. SwissTransfer and WeTransfer hand
+you a download page, not a file, and their links expire. They are the right way
+to send somebody a copy once; they are not hosting. Send the file, have them
+keep it, and use "we both have the file" from then on.
 Seeking needs the host to support range requests, which nearly all do, and no
 CORS headers are required because the video is only played, never read.
 

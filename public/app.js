@@ -551,6 +551,16 @@ function handleMessage(msg) {
       afterStateChange();
       break;
 
+    case 'urlCheck':
+      setLoading(ui.linkLoad, false);
+      if (msg.ok) {
+        loadMediaUrl(msg.url, true);
+      } else {
+        showOverlay(msg.reason, 'Try another', () => { hideOverlay(); ui.linkUrl.focus(); });
+        sysMessage(msg.reason);
+      }
+      break;
+
     case 'countdown':
       runCountdown(msg.at, msg.from);
       break;
@@ -3427,12 +3437,12 @@ ui.linkLoad.addEventListener('click', () => {
     toast('Only http and https links work.');
     return;
   }
-  if (/\.(html?|php|aspx)$/i.test(parsed.pathname)) {
-    toast('That is a web page, not a video file. Find the direct link to the file.');
-    return;
-  }
+  // Ask the server what is actually at the other end before handing it to
+  // everyone's video element. A download page looks nothing like a video, and
+  // saying so is far more use than a black rectangle.
   setLoading(ui.linkLoad, true);
-  loadMediaUrl(parsed.toString(), true).finally(() => setLoading(ui.linkLoad, false));
+  showOverlay('Checking that link...', null, null, true);
+  send({ t: 'checkUrl', url: parsed.toString() });
 });
 
 ui.linkUrl.addEventListener('keydown', (e) => {
