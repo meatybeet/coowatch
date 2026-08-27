@@ -220,8 +220,20 @@ The host owns the session. The panel button in the room header opens everything:
   muted afterwards; the host can lift their own mute but not someone else's.
 
 **Per person** (host only): mute for 30 seconds, mute indefinitely, unmute,
-block or unblock the chat, hand over the host role, or remove them. Removing
-someone bans their token, so they cannot walk straight back in.
+block or unblock the chat, hand over the host role, kick them, or ban them.
+
+A **kick** removes someone from the room and nothing more; they can rejoin with
+the same link. A **ban** keeps them out of that session for good, matching both
+their saved token and the address they connected from. Banned people appear in
+a list in the panel with an Unban button, and losing a vote to be removed bans
+you the same way.
+
+Be honest with yourself about what an address ban buys you. Everyone behind one
+home router or one mobile carrier shares an address, so a ban can catch someone
+you did not mean to catch. Mobile addresses change on their own, and a VPN
+sidesteps the whole thing in one click. It raises the effort; it is not a wall.
+That is why Unban is right next to it. Bans live in memory with the session and
+vanish when it ends.
 
 **Renaming** - the host can rename the session at any time from the panel.
 

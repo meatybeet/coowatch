@@ -66,6 +66,7 @@ const ui = {
   pollMaker: $('poll-maker'), pollQ: $('poll-q'), pollCreate: $('poll-create'),
   memberList: $('member-list'), peopleCount: $('people-count'),
   guestActions: $('guest-actions'), askHost: $('ask-host'),
+  banSec: $('ban-sec'), banList: $('ban-list'), banCount: $('ban-count'),
   banners: $('banners'), chatNote: $('chat-note'),
   leaveDialog: $('leave-dialog'), leaveScrim: $('leave-scrim'), leaveText: $('leave-text'),
   heirWrap: $('leave-heir-wrap'), heir: $('heir'), leaveTransfer: $('leave-transfer'),
@@ -111,6 +112,7 @@ const state = {
   config: { chatOpen: true, lockControls: false, muteAll: false },
   poll: null,
   voteKick: null,
+  bans: [],
   myVote: null,       // which poll option I picked
   selfMuted: false
 };
@@ -505,6 +507,7 @@ function handleMessage(msg) {
 
     case 'roster':
       state.roster = msg.members;
+      if (msg.bans) state.bans = msg.bans;
       for (const m of msg.members) {
         if (m.id !== state.myId) historySeen(m.name, m.companion);
       }
@@ -672,6 +675,7 @@ async function enterRoom(msg) {
   state.config = msg.session.config || state.config;
   state.poll = msg.poll || null;
   state.voteKick = msg.voteKick || null;
+  state.bans = msg.bans || [];
   state.selfMuted = rejoined ? !!(msg.me && msg.me.selfMuted) : true;
   if (!rejoined) send({ t: 'selfMute', muted: true });
   saveResume(msg.session.code, msg.token);
@@ -797,6 +801,7 @@ function goHome() {
   state.roster = [];
   state.poll = null;
   state.voteKick = null;
+  state.bans = [];
   state.myVote = null;
   state.selfMuted = false;
   state.config = { chatOpen: true, lockControls: false, muteAll: false };
@@ -2030,6 +2035,8 @@ function renderPanel() {
   const watchers = state.roster.filter((m) => !m.companion).length;
   ui.peopleCount.textContent = '(' + watchers + ')';
 
+  renderBans();
+
   ui.memberList.innerHTML = '';
   for (const m of state.roster) {
     const row = document.createElement('li');
@@ -2090,9 +2097,14 @@ function renderPanel() {
           }
         }));
       }
-      actions.appendChild(actionButton('Remove', () => {
-        if (confirm('Remove ' + m.name + ' from the session?')) {
+      actions.appendChild(actionButton('Kick', () => {
+        if (confirm('Kick ' + m.name + '? They can rejoin with the link.')) {
           send({ t: 'host:kick', id: m.id });
+        }
+      }, true));
+      actions.appendChild(actionButton('Ban', () => {
+        if (confirm('Ban ' + m.name + '? They will not be able to rejoin. You can undo it from the Banned list.')) {
+          send({ t: 'host:ban', id: m.id });
         }
       }, true));
     }
@@ -2109,6 +2121,32 @@ function renderPanel() {
 
     if (actions.children.length) row.appendChild(actions);
     ui.memberList.appendChild(row);
+  }
+}
+
+function renderBans() {
+  const show = state.isHost && state.bans.length > 0;
+  ui.banSec.hidden = !show;
+  if (!show) return;
+
+  ui.banCount.textContent = '(' + state.bans.length + ')';
+  ui.banList.innerHTML = '';
+  for (const b of state.bans) {
+    const li = document.createElement('li');
+
+    const who = document.createElement('div');
+    who.className = 'ban-who';
+    const name = document.createElement('span');
+    name.textContent = b.name;
+    who.appendChild(name);
+    const how = document.createElement('span');
+    how.className = 'meta';
+    how.textContent = b.byIp ? 'name and address' : 'name only';
+    who.appendChild(how);
+
+    li.appendChild(who);
+    li.appendChild(actionButton('Unban', () => send({ t: 'host:unban', token: b.token })));
+    ui.banList.appendChild(li);
   }
 }
 

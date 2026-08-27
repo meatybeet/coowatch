@@ -1,0 +1,1 @@
+cd "C:/Users/alban/OneDrive/Bureau/codes/watch-together" && rm -f tunnel.log && npx -y cloudflared tunnel --url http://localhost:3000 > tunnel.log 2>&1

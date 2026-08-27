@@ -35,6 +35,25 @@ function makeCode() {
   return code;
 }
 
+// Behind the Cloudflare tunnel or a platform proxy the socket address is the
+// proxy's, so the forwarded header is the only real one. It is only
+// trustworthy because nothing reaches this process except through that proxy;
+// exposed directly, a client could set it to anything.
+function clientIp(req) {
+  const forwarded = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
+  if (forwarded) return String(forwarded).split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || '';
+}
+
+// Loopback means everyone testing on this machine shares one address, so
+// banning it would lock the host out of their own session.
+function bannableIp(ip) {
+  if (!ip) return null;
+  const bare = ip.replace(/^::ffff:/, '');
+  if (bare === '127.0.0.1' || bare === '::1' || bare === 'localhost') return null;
+  return bare;
+}
+
 function cleanName(name) {
   return String(name || 'Guest').trim().slice(0, 24) || 'Guest';
 }
@@ -77,6 +96,15 @@ function roster(session) {
   return [...session.members.values()].map((m) => memberView(session, m));
 }
 
+function banList(session) {
+  return session.bans.map((b) => ({ token: b.token, name: b.name, at: b.at, byIp: !!b.ip }));
+}
+
+function isBanned(session, token, ip) {
+  const bare = bannableIp(ip);
+  return session.bans.some((b) => (token && b.token === token) || (bare && b.ip === bare));
+}
+
 function pollView(session) {
   if (!session.poll) return null;
   return {
@@ -115,7 +143,9 @@ function sessionInfo(session) {
 }
 
 function pushRoster(session) {
-  broadcast(session, { t: 'roster', members: roster(session), hostId: session.hostId });
+  broadcast(session, {
+    t: 'roster', members: roster(session), hostId: session.hostId, bans: banList(session)
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,10 +175,11 @@ app.get('/api/health', (req, res) => res.json({ ok: true, sessions: sessions.siz
 /* membership                                                          */
 /* ------------------------------------------------------------------ */
 
-function newMember(name, companion) {
+function newMember(name, companion, ip) {
   return {
     id: crypto.randomUUID(),
     token: crypto.randomBytes(24).toString('hex'),
+    ip: ip || '',
     name: cleanName(name),
     companion: !!companion,
     ws: null,
@@ -262,6 +293,7 @@ function joinPayload(session, member) {
     streamKind: session.streamKind,
     poll: pollView(session),
     voteKick: voteKickView(session),
+    bans: banList(session),
     me: memberView(session, member)
   };
 }
@@ -287,7 +319,12 @@ function settleVoteKick(session) {
     broadcast(session, { t: 'votekick', vote: null });
     broadcast(session, { t: 'system', text: `${target.name} was voted out.` });
     send(target.ws, { t: 'kicked', reason: 'The room voted to remove you.' });
-    session.banned.add(target.token);
+    session.bans.push({
+      token: target.token,
+      ip: bannableIp(target.ip),
+      name: target.name,
+      at: Date.now()
+    });
     removeMember(session, target, 'voted out');
     return;
   }
@@ -298,7 +335,8 @@ function settleVoteKick(session) {
 /* socket handling                                                     */
 /* ------------------------------------------------------------------ */
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  ws.ip = clientIp(req);
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   send(ws, { t: 'hello' });
@@ -316,7 +354,7 @@ wss.on('connection', (ws) => {
 
     if (msg.t === 'create') {
       handleDisconnect(ws);
-      const member = newMember(msg.name, false);
+      const member = newMember(msg.name, false, ws.ip);
       const session = {
         code: makeCode(),
         title: String(msg.title || 'Movie night').trim().slice(0, 60) || 'Movie night',
@@ -328,7 +366,7 @@ wss.on('connection', (ws) => {
         hostId: member.id,
         config: { chatOpen: true, lockControls: false, muteAll: false },
         members: new Map([[member.id, member]]),
-        banned: new Set(),
+        bans: [],   // { token, ip, name, at }
         poll: null,
         voteKick: null,
         hostRequests: new Set()
@@ -348,6 +386,10 @@ wss.on('connection', (ws) => {
       }
 
       if (msg.t === 'rejoin') {
+        if (isBanned(session, msg.token, ws.ip)) {
+          send(ws, { t: 'error', message: 'You are banned from this session.', fatal: true });
+          return;
+        }
         const existing = [...session.members.values()].find((m) => m.token === msg.token);
         if (!existing) {
           send(ws, { t: 'error', message: 'That session moved on without you.', fatal: true });
@@ -361,13 +403,13 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      if (msg.token && session.banned.has(msg.token)) {
-        send(ws, { t: 'error', message: 'You were removed from this session.', fatal: true });
+      if (isBanned(session, msg.token, ws.ip)) {
+        send(ws, { t: 'error', message: 'You are banned from this session.', fatal: true });
         return;
       }
 
       handleDisconnect(ws);
-      const member = newMember(msg.name, msg.companion);
+      const member = newMember(msg.name, msg.companion, ws.ip);
       session.members.set(member.id, member);
       attach(ws, session, member);
       send(ws, joinPayload(session, member));
@@ -557,10 +599,35 @@ wss.on('connection', (ws) => {
 
       case 'host:kick': {
         if (!isHost || !target || target.id === me.id) break;
-        session.banned.add(target.token);
+        // A kick is a door, not a wall: they can come back if they behave.
         send(target.ws, { t: 'kicked', reason: 'The host removed you from the session.' });
         broadcast(session, { t: 'system', text: `${target.name} was removed by the host.` });
         removeMember(session, target, 'removed');
+        break;
+      }
+
+      case 'host:ban': {
+        if (!isHost || !target || target.id === me.id) break;
+        session.bans.push({
+          token: target.token,
+          ip: bannableIp(target.ip),
+          name: target.name,
+          at: Date.now()
+        });
+        send(target.ws, { t: 'kicked', reason: 'The host banned you from this session.' });
+        broadcast(session, { t: 'system', text: `${target.name} was banned by the host.` });
+        removeMember(session, target, 'banned');
+        break;
+      }
+
+      case 'host:unban': {
+        if (!isHost) break;
+        const before = session.bans.length;
+        session.bans = session.bans.filter((b) => b.token !== msg.token);
+        if (session.bans.length !== before) {
+          broadcast(session, { t: 'system', text: 'A ban was lifted.' });
+          pushRoster(session);
+        }
         break;
       }
 
