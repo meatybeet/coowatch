@@ -35,6 +35,24 @@
       <p class="tag">Same video, same second, from anywhere.</p>
     </header>
 
+    <!-- Public Sessions Card -->
+    <div class="card card-public card-lead">
+      <div class="row-between">
+        <div class="card-head margin-none">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+          <h2>Public sessions</h2>
+        </div>
+        <button id="refresh-btn" class="ghost small">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <span>Refresh</span>
+        </button>
+      </div>
+      <ul id="public-list" class="public-list"></ul>
+      <p class="empty" id="public-empty">No public sessions yet. Start one below and it will show up here.</p>
+    </div>
+
     <!-- User Name Card -->
     <div class="card card-profile">
       <div class="card-head">
@@ -155,24 +173,6 @@
             <span>Join session</span>
             <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>
-        </div>
-
-        <!-- Public Sessions Card -->
-        <div class="card card-public">
-          <div class="row-between">
-            <div class="card-head margin-none">
-              <div class="card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              </div>
-              <h2>Public sessions</h2>
-            </div>
-            <button id="refresh-btn" class="ghost small">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-              <span>Refresh</span>
-            </button>
-          </div>
-          <ul id="public-list" class="public-list"></ul>
-          <p class="empty" id="public-empty">Nothing public right now.</p>
         </div>
       </div>
     </div>

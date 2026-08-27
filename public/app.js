@@ -271,9 +271,22 @@ ui.createBtn.addEventListener('click', () => {
 
 let joiningAsCompanion = false;
 
+// The public list sits above the name field, so a first-time visitor will click
+// Join before typing anything. Remember what they wanted and pick it up again
+// as soon as they have a name, instead of making them hunt for the button.
+let pendingJoin = null;
+
+function askForName(code) {
+  pendingJoin = code || null;
+  homeError('Almost there - add a display name and we will take you straight in.');
+  ui.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => ui.name.focus(), 260);
+}
+
 function doJoin(code, btn) {
   const name = ui.name.value.trim();
-  if (!name) { homeError('Enter your name first.'); ui.name.focus(); return; }
+  if (!name) { askForName(code); return; }
+  pendingJoin = null;
   if (!code) { homeError('Enter a session code.'); ui.code.focus(); return; }
   homeError('');
   rememberName();
@@ -284,20 +297,45 @@ function doJoin(code, btn) {
 }
 
 ui.joinBtn.addEventListener('click', () => doJoin(ui.code.value.trim().toUpperCase(), ui.joinBtn));
+
+ui.name.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const name = ui.name.value.trim();
+  if (!name) return;
+  homeError('');
+  if (pendingJoin) doJoin(pendingJoin, null);
+  else if (ui.code.value.trim()) ui.joinBtn.click();
+});
+
+ui.name.addEventListener('input', () => {
+  if (ui.name.value.trim()) homeError('');
+});
 ui.code.addEventListener('keydown', (e) => { if (e.key === 'Enter') ui.joinBtn.click(); });
 
-async function loadPublicSessions() {
-  ui.publicEmpty.hidden = true;
-  ui.publicList.innerHTML = '<li class="list-loading"><span class="spinner"></span></li>';
+let lastListSignature = null;
+
+const EMPTY_LIST_TEXT = 'No public sessions yet. Start one below and it will show up here.';
+
+// `quiet` is used by the background poll: redrawing a spinner every fifteen
+// seconds over a list somebody is reading would be worse than a stale row.
+async function loadPublicSessions(quiet) {
+  if (!quiet) {
+    ui.publicEmpty.hidden = true;
+    ui.publicList.innerHTML = '<li class="list-loading"><span class="spinner"></span></li>';
+  }
   try {
     const res = await fetch('/api/sessions');
     const data = await res.json();
+    const signature = data.sessions.map((s) => s.code + ':' + s.count + ':' + s.title).join('|');
+    if (quiet && signature === lastListSignature) return;
+    lastListSignature = signature;
+
     ui.publicList.innerHTML = '';
     ui.publicEmpty.hidden = data.sessions.length > 0;
-    ui.publicEmpty.textContent = 'Nothing public right now.';
+    ui.publicEmpty.textContent = EMPTY_LIST_TEXT;
     data.sessions.forEach((s, i) => {
       const li = document.createElement('li');
-      li.style.animationDelay = (i * 45) + 'ms';
+      li.style.animationDelay = (quiet ? 0 : i * 45) + 'ms';
       const info = document.createElement('div');
       const name = document.createElement('div');
       name.className = 'p-title';
@@ -316,6 +354,7 @@ async function loadPublicSessions() {
       ui.publicList.appendChild(li);
     });
   } catch {
+    if (quiet) return;
     ui.publicList.innerHTML = '';
     ui.publicEmpty.hidden = false;
     ui.publicEmpty.textContent = 'Could not load the list.';
@@ -672,6 +711,7 @@ function goHome() {
   ui.room.classList.remove('active');
   ui.home.classList.add('active');
   hideOverlay();
+  lastListSignature = null;
   loadPublicSessions();
 }
 
@@ -1606,6 +1646,19 @@ if (inviteCode) {
 }
 
 loadPublicSessions();
+
+// The list is the first thing on the page, so it should not look empty just
+// because it was drawn a minute ago. Only poll while it is actually on screen.
+setInterval(() => {
+  if (state.session || document.hidden || !ui.home.classList.contains('active')) return;
+  loadPublicSessions(true);
+}, 15000);
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !state.session && ui.home.classList.contains('active')) {
+    loadPublicSessions(true);
+  }
+});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
