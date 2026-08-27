@@ -28,7 +28,19 @@ The tunnel is fetched automatically the first time (about 30 seconds) and cached
 afterwards. Nothing is installed globally and no account is needed. The address
 changes each run, so send a fresh link each time.
 
-`npm run share` also opens the address in a browser for you. It prefers Chrome
+`npm run share` also opens the address in a browser for you, once the hostname
+actually exists in DNS.
+
+That wait matters more than it sounds. A quick tunnel prints its hostname
+before the DNS record for it is published, and many home routers cache a
+"does not exist" answer for minutes. One lookup a second too early can leave
+the address broken long after it went live, which looks exactly like the
+tunnel having failed. The readiness check therefore asks a public resolver
+directly and never lets the system resolver see the name until it is real.
+
+If an address still will not load while somebody else can reach it fine, your
+router has cached a negative answer for it. Pointing the machine at 1.1.1.1 or
+8.8.8.8 instead of the router avoids the problem entirely. It prefers Chrome
 or Edge over the system default, because some browsers - Opera especially -
 ship a VPN and a bandwidth limiter that quietly break peer-to-peer video. Set
 `COOWATCH_BROWSER=default` to use the system default anyway, or

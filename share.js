@@ -6,6 +6,7 @@
 // time and cached after that. Nothing is installed globally, no account needed.
 
 const { spawn, execFileSync } = require('child_process');
+const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 
@@ -145,7 +146,53 @@ function banner(url) {
   console.log('  Keep this window open. Ctrl+C stops everything.');
   console.log(line('='));
   console.log('');
-  openBrowser(url);
+  openWhenLive(url);
+}
+
+// cloudflared prints the hostname the moment it registers, before the DNS
+// record for it exists. Asking about a name too early is worse than waiting:
+// many home routers cache the "does not exist" answer for minutes, so one
+// early lookup can keep the address broken long after it went live.
+//
+// So the readiness check goes straight to a public resolver and never lets the
+// system resolver see the name until it is real. The browser's own lookup then
+// finds it first time.
+const publicResolver = new dns.promises.Resolver();
+try {
+  publicResolver.setServers(['1.1.1.1', '8.8.8.8']);
+} catch {
+  // stick with the default servers if that is refused
+}
+
+async function waitForDns(hostname, deadline) {
+  while (Date.now() < deadline && !shuttingDown) {
+    try {
+      const addresses = await publicResolver.resolve4(hostname);
+      if (addresses && addresses.length) return true;
+    } catch {
+      // not published yet
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
+async function openWhenLive(url) {
+  if (process.env.COOWATCH_NO_OPEN === '1' || process.argv.includes('--no-open')) return;
+
+  const hostname = new URL(url).hostname;
+  const live = await waitForDns(hostname, Date.now() + 90000);
+  if (shuttingDown) return;
+
+  if (!live) {
+    console.log('The address has not appeared in DNS yet. Try it in a minute:');
+    console.log('  ' + url);
+    return;
+  }
+
+  // A moment for the answer to reach whichever resolver the browser uses.
+  await new Promise((r) => setTimeout(r, 1500));
+  if (!shuttingDown) openBrowser(url);
 }
 
 async function waitForServer(attempts = 40) {
