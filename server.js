@@ -365,7 +365,9 @@ wss.on('connection', (ws, req) => {
         code: makeCode(),
         title: String(msg.title || 'Movie night').trim().slice(0, 60) || 'Movie night',
         isPublic: !!msg.isPublic,
-        source: msg.source === 'youtube' ? 'youtube' : 'file',
+        // 'file' streams the host's picture out; 'sync' keeps everyone's own
+        // copy in step and sends no video at all.
+        source: ['youtube', 'sync'].includes(msg.source) ? msg.source : 'file',
         youtubeId: null,
         streamKind: null,
         createdAt: Date.now(),

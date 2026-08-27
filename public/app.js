@@ -43,6 +43,7 @@ const ui = {
   hostTools: $('host-tools'), pickFile: $('pick-file'), fileInput: $('file-input'),
   shareBtn: $('share-btn'), shareLabel: $('share-label'),
   controls: $('controls'), liveBadge: $('live-badge'),
+  connChip: $('conn-chip'), connText: $('conn-text'),
   ytTools: $('yt-tools'), ytUrl: $('yt-url'), ytLoad: $('yt-load'),
   peers: $('peers'), chatLog: $('chat-log'), chatForm: $('chat-form'), chatInput: $('chat-input'),
   stickerBtn: $('sticker-btn'), stickerInput: $('sticker-input'),
@@ -341,10 +342,14 @@ function wireSeg(seg, onChange) {
   });
 }
 
+const SOURCE_HINTS = {
+  file: 'Play a file, or share a browser tab so anything you can watch, she can watch. Streams straight to whoever joins - keep this tab open.',
+  sync: 'You each open your own copy of the same file. Only play, pause and seek travel between you, so it costs almost no bandwidth and stays sharp on a weak connection.',
+  youtube: 'You both load the same YouTube video and it stays in sync. Nothing is uploaded.'
+};
+
 wireSeg(ui.sourceSeg, (btn) => {
-  ui.sourceHint.textContent = btn.dataset.source === 'youtube'
-    ? 'You both load the same YouTube video and it stays in sync. Nothing is uploaded.'
-    : 'Play a file, or share a browser tab so anything you can watch, she can watch. Streams straight to whoever joins - keep this tab open.';
+  ui.sourceHint.textContent = SOURCE_HINTS[btn.dataset.source] || SOURCE_HINTS.file;
 });
 wireSeg(ui.privacySeg);
 wireSeg(ui.roleSeg);
@@ -725,6 +730,7 @@ async function enterRoom(msg) {
   afterStateChange();
 
   const isYouTube = state.mode === 'youtube';
+  const isSync = state.mode === 'sync';
   resetVideoElement();
   wasHostLastTime = state.isHost;
   setShareUi();
@@ -760,6 +766,9 @@ async function enterRoom(msg) {
     else showOverlay(state.isHost
       ? 'Paste a YouTube link below to start.'
       : 'Waiting for the host to pick a video...', null, null, !state.isHost);
+  } else if (isSync) {
+    showOverlay('Open your own copy of the file to join in.',
+      'Choose file', () => ui.fileInput.click());
   } else if (state.isHost) {
     showOverlay(rejoined
       ? 'Session restored. Pick the file again to start streaming.'
@@ -810,6 +819,7 @@ function goHome() {
   ui.room.classList.remove('companion');
   ui.companionCard.hidden = true;
   historyEnd();
+  startConnectionWatch();
   quietSince = 0;
   wasPlaying = false;
   setTimeout(updateMusic, 0);
@@ -826,6 +836,7 @@ function goHome() {
   state.config = { chatOpen: true, lockControls: false, muteAll: false };
   ui.banners.innerHTML = '';
   ui.chatNote.hidden = true;
+  stopConnectionWatch();
   clearReply();
   closeMentions();
   closeHelp();
@@ -1231,6 +1242,18 @@ async function openFile(file) {
     showOverlay('Tap to start playing.', 'Play', () => { ui.video.play(); hideOverlay(); });
   }
 
+  if (state.mode === 'sync') {
+    // Nobody is watching our pixels, so skip the capture entirely and just
+    // report where we are.
+    ui.roomTitle.textContent = file.name.replace(/\.[^.]+$/, '');
+    state.streamKind = 'file';
+    startProgressLoop();
+    applyStreamKind();
+    updateControlsEnabled();
+    sysMessage('Your copy is loaded. Playback stays in step with everyone else.');
+    return;
+  }
+
   state.localFilm = capture.call(ui.video);
   // Chrome only attaches the tracks once decoding has actually started.
   if (state.localFilm.getVideoTracks().length === 0) {
@@ -1243,7 +1266,7 @@ async function openFile(file) {
     sysMessage('Could not capture the picture from this file. Try letting it play for a second, then pick it again.');
   }
 
-  broadcastFilm();
+  if (state.mode !== 'sync') broadcastFilm();
   const title = file.name.replace(/\.[^.]+$/, '');
   ui.roomTitle.textContent = title;
   state.streamKind = 'file';
@@ -1255,14 +1278,14 @@ async function openFile(file) {
 }
 
 function onVideoMeta() {
-  if (!state.isHost || state.mode !== 'file') return;
+  if (!drivesOwnPlayer() || state.mode === 'youtube') return;
   state.duration = ui.video.duration || 0;
   updateTimeUi(ui.video.currentTime, state.duration);
   updateControlsEnabled();
 }
 
 function onVideoPlay() {
-  if (!state.isHost || state.mode !== 'file') return;
+  if (!drivesOwnPlayer() || state.mode === 'youtube') return;
   state.paused = false;
   ui.playBtn.textContent = 'Pause';
   sendProgress();
@@ -1270,7 +1293,7 @@ function onVideoPlay() {
 }
 
 function onVideoPause() {
-  if (!state.isHost || state.mode !== 'file') return;
+  if (!drivesOwnPlayer() || state.mode === 'youtube') return;
   state.paused = true;
   ui.playBtn.textContent = 'Play';
   sendProgress();
@@ -1278,7 +1301,7 @@ function onVideoPause() {
 }
 
 function onVideoTime() {
-  if (state.isHost && state.mode === 'file' && !state.seeking) {
+  if (drivesOwnPlayer() && state.mode !== 'youtube' && !state.seeking) {
     state.duration = ui.video.duration || 0;
     updateTimeUi(ui.video.currentTime, state.duration);
   }
@@ -1344,6 +1367,18 @@ function applyRemoteProgress(msg) {
   if (!state.seeking) updateTimeUi(msg.time, msg.duration);
   updateControlsEnabled();
 
+  // Each copy plays on its own machine in sync mode, so nudge it back when it
+  // drifts, exactly as the YouTube path does.
+  if (state.mode === 'sync' && !state.companion && ui.video.src
+      && Date.now() > state.suppressUntil) {
+    if (Math.abs(ui.video.currentTime - msg.time) > 1.5) {
+      state.suppressUntil = Date.now() + 900;
+      ui.video.currentTime = msg.time;
+    }
+    if (msg.paused && !ui.video.paused) { state.suppressUntil = Date.now() + 900; ui.video.pause(); }
+    if (!msg.paused && ui.video.paused) { state.suppressUntil = Date.now() + 900; ui.video.play().catch(() => {}); }
+  }
+
   // YouTube plays independently on each device, so nudge it back when it drifts.
   if (state.mode === 'youtube' && state.yt && Date.now() > state.suppressUntil) {
     if (Math.abs(ytTime() - msg.time) > 1.5) {
@@ -1368,6 +1403,7 @@ function updateControlsEnabled() {
   let ready;
   // A second screen has no player, so it goes on what the host reports.
   if (state.companion) ready = state.duration > 0;
+  else if (state.mode === 'sync') ready = !!ui.video.src;
   else if (state.mode === 'youtube') ready = !!state.yt;
   else if (state.isHost) ready = !!ui.video.src || !!state.localFilm;
   else ready = state.gotFilm;
@@ -1409,6 +1445,7 @@ ui.seek.addEventListener('change', () => {
 
 function currentTime() {
   if (state.companion) return state.position;
+  if (state.mode === 'sync') return ui.video.currentTime || state.position;
   if (state.mode === 'youtube') return ytTime();
   return state.isHost ? ui.video.currentTime : state.position;
 }
@@ -1416,6 +1453,10 @@ function currentTime() {
 // Applies a control on the device that triggered it. In file mode a guest only
 // sends the request: the host's element is the single source of truth and the
 // change comes back through the stream.
+function drivesOwnPlayer() {
+  return state.mode === 'sync' ? !state.companion : state.isHost;
+}
+
 function applyLocalControl(action, time) {
   if (state.mode === 'youtube') {
     if (state.yt) {
@@ -1424,7 +1465,7 @@ function applyLocalControl(action, time) {
       else if (action === 'pause') state.yt.pauseVideo();
       else if (action === 'seek') state.yt.seekTo(time, true);
     }
-  } else if (state.isHost) {
+  } else if (drivesOwnPlayer()) {
     if (action === 'play') ui.video.play().catch(() => {});
     else if (action === 'pause') ui.video.pause();
     else if (action === 'seek') ui.video.currentTime = time;
@@ -1444,7 +1485,7 @@ function applyRemoteControl(msg) {
       else if (msg.action === 'pause') state.yt.pauseVideo();
       else if (msg.action === 'seek') state.yt.seekTo(msg.time, true);
     }
-  } else if (state.isHost) {
+  } else if (drivesOwnPlayer()) {
     if (msg.action === 'play') ui.video.play().catch(() => {});
     else if (msg.action === 'pause') ui.video.pause();
     else if (msg.action === 'seek') ui.video.currentTime = msg.time;
@@ -1973,12 +2014,14 @@ function rebuildPeersAsHost() {
 // once on the way in.
 function applyHostTools() {
   const isYouTube = state.mode === 'youtube';
-  ui.hostTools.hidden = !state.isHost || state.companion;
+  const isSync = state.mode === 'sync';
+  // In sync mode there is no host stream, so everyone needs their own picker.
+  ui.hostTools.hidden = (!state.isHost && !isSync) || state.companion;
   ui.pickFile.hidden = isYouTube;
-  ui.shareBtn.hidden = isYouTube;
+  ui.shareBtn.hidden = isYouTube || isSync;
   ui.ytTools.hidden = !isYouTube;
 
-  if (wasHostLastTime && !state.isHost) {
+  if (wasHostLastTime && !state.isHost && state.mode === 'file') {
     // Handed the role over: stop pushing our own picture at everyone.
     if (sharingScreen()) stopScreenShare();
     else if (state.localFilm || ui.video.src) {
@@ -1992,7 +2035,7 @@ function applyHostTools() {
     }
   }
 
-  if (!wasHostLastTime && state.isHost && state.session) {
+  if (!wasHostLastTime && state.isHost && state.session && state.mode === 'file') {
     rebuildPeersAsHost();
     ui.renameInput.value = state.session.title || '';
     if (state.mode !== 'youtube' && !state.localFilm && !ui.video.src) {
@@ -2350,6 +2393,10 @@ try { musicEnabled = localStorage.getItem(MUSIC_KEY) !== 'off'; } catch {}
 // count: the music keeps a paused room company until playback resumes.
 function mediaPlaying() {
   if (!state.session) return false;
+  if (state.mode === 'sync') {
+    return state.companion ? (state.duration > 0 && !state.paused)
+                           : (!!ui.video.src && !ui.video.paused);
+  }
   if (state.mode === 'youtube') return !!state.yt && !state.paused;
   if (state.streamKind === 'screen') return true;
   if (state.companion) return state.duration > 0 && !state.paused;
@@ -3174,3 +3221,101 @@ ui.chatLog.addEventListener('drop', (e) => {
   e.preventDefault();
   sendSticker(file);
 });
+
+/* ------------------------------------------------------------------ */
+/* connection quality                                                  */
+/* ------------------------------------------------------------------ */
+
+// Reading getStats every couple of seconds turns "it's laggy" into something
+// you can act on: how much is actually flowing, how much is being dropped, and
+// whether the connection went peer-to-peer or is crawling through a relay.
+const CONN_POLL_MS = 2500;
+
+let connTimer = null;
+let lastBytes = 0;
+let lastBytesAt = 0;
+
+function connectionPeers() {
+  return [...state.peers.values()].filter((e) => e.pc && e.pc.connectionState === 'connected');
+}
+
+async function sampleConnection() {
+  if (!state.session || state.mode === 'sync' || state.companion) {
+    ui.connChip.hidden = true;
+    return;
+  }
+  const peers = connectionPeers();
+  if (!peers.length) {
+    ui.connChip.hidden = true;
+    return;
+  }
+
+  let bytes = 0;
+  let lost = 0;
+  let received = 0;
+  let relayed = false;
+
+  for (const entry of peers) {
+    let report;
+    try {
+      report = await entry.pc.getStats();
+    } catch {
+      continue;
+    }
+    report.forEach((stat) => {
+      if (stat.type === 'outbound-rtp' && !stat.isRemote) bytes += stat.bytesSent || 0;
+      if (stat.type === 'inbound-rtp' && !stat.isRemote) {
+        bytes += stat.bytesReceived || 0;
+        lost += stat.packetsLost || 0;
+        received += stat.packetsReceived || 0;
+      }
+      if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated) {
+        const local = report.get(stat.localCandidateId);
+        const remote = report.get(stat.remoteCandidateId);
+        if ((local && local.candidateType === 'relay') || (remote && remote.candidateType === 'relay')) {
+          relayed = true;
+        }
+      }
+    });
+  }
+
+  const now = Date.now();
+  let kbps = 0;
+  if (lastBytesAt && bytes >= lastBytes) {
+    kbps = ((bytes - lastBytes) * 8) / ((now - lastBytesAt) / 1000) / 1000;
+  }
+  lastBytes = bytes;
+  lastBytesAt = now;
+
+  const lossPct = received + lost > 0 ? (lost / (received + lost)) * 100 : 0;
+  const rate = kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : Math.round(kbps) + ' kbps';
+
+  let grade = 'good';
+  if (lossPct > 5 || (kbps > 0 && kbps < 250)) grade = 'bad';
+  else if (lossPct > 1.5 || relayed) grade = 'fair';
+
+  ui.connChip.hidden = false;
+  ui.connChip.dataset.grade = grade;
+  ui.connText.textContent = rate + (lossPct >= 0.5 ? ` · ${lossPct.toFixed(1)}% lost` : '');
+  ui.connChip.title = [
+    rate + ' right now',
+    lossPct.toFixed(1) + '% of packets lost',
+    relayed ? 'Going through a relay, which adds delay' : 'Direct peer-to-peer connection',
+    grade === 'bad' ? 'Try the "we both have the file" mode or a YouTube session.' : ''
+  ].filter(Boolean).join('\n');
+}
+
+function startConnectionWatch() {
+  clearInterval(connTimer);
+  lastBytes = 0;
+  lastBytesAt = 0;
+  connTimer = setInterval(sampleConnection, CONN_POLL_MS);
+}
+
+function stopConnectionWatch() {
+  clearInterval(connTimer);
+  connTimer = null;
+  ui.connChip.hidden = true;
+}
+
+startConnectionWatch();

@@ -2638,3 +2638,36 @@ input[type="text"]:focus {
 @media (max-width: 540px) {
   .chat-log .sticker { max-width: 150px; max-height: 150px; }
 }
+
+/* ---------- connection quality chip ---------- */
+
+.conn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--raise);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  cursor: help;
+}
+.conn-chip[hidden] { display: none; }
+
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex-shrink: 0;
+}
+.conn-chip[data-grade="good"] { border-color: color-mix(in srgb, #22c55e 40%, var(--line)); }
+.conn-chip[data-grade="good"] .conn-dot { background: #22c55e; }
+.conn-chip[data-grade="fair"] { border-color: color-mix(in srgb, #f59e0b 45%, var(--line)); color: #fcd34d; }
+.conn-chip[data-grade="fair"] .conn-dot { background: #f59e0b; }
+.conn-chip[data-grade="bad"] { border-color: color-mix(in srgb, #ef4444 50%, var(--line)); color: #fca5a5; }
+.conn-chip[data-grade="bad"] .conn-dot { background: #ef4444; animation: pulse 1.6s ease-in-out infinite; }

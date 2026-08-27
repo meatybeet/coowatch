@@ -148,13 +148,19 @@ Microphones start **muted**, in every mode, and stay that way until the person
 presses the button themselves. Nobody is broadcast before they choose to be.
 
 
-## Two ways to watch
+## Three ways to watch
 
 **A file on your device** — you pick the video, the app captures it straight out of
 the player and streams it peer-to-peer to whoever joined. Your friend needs nothing
 but the link. When you pause, her picture freezes, because there are no more frames
 to send. Costs your upload bandwidth (roughly 3-8 Mbit/s for 1080p) and your tab has
 to stay open.
+
+**You both have the file** — you each open your own copy and only play, pause
+and seek travel between you. Nothing is streamed, so it costs almost no
+bandwidth, stays perfectly sharp, and is unaffected by how bad anyone's
+connection is. Easily the best option when it applies: the catch is that you
+both need the same file, and it should be the same cut, or the timeline drifts.
 
 **A YouTube link** — you both load the same video and the app keeps the clocks
 together. No upload, no bandwidth cost, works on any connection. Play, pause and
@@ -337,6 +343,25 @@ One thing a reload cannot restore: **a local file**. Browsers will not re-open
 a file without the user picking it again, so a host who reloads is asked to
 choose the file once more. A YouTube session comes back completely, since only
 the video id has to survive.
+
+## When someone is on a bad connection
+
+In order of how much it helps:
+
+1. **Use "we both have the file", or YouTube.** Neither sends video between
+   you, so a weak line stops mattering. Everything below is damage control by
+   comparison.
+2. **Watch the connection chip** next to the host controls. It shows the rate,
+   the share of packets being lost, and whether you are connected directly or
+   through a relay. Hover it for the detail. Red means what you are trying is
+   not going to work; that is the moment to switch modes rather than persevere.
+3. **A relayed connection is a bottleneck.** If the chip says relay, everything
+   is squeezing through a shared public server. Your own TURN server, or a
+   network that permits direct connections, fixes it.
+
+Streaming a file or a screen is the expensive option: the host uploads a full
+copy per viewer, uncapped. It is the right choice when only one of you has the
+video, and the wrong one whenever a synced copy is possible.
 
 ## Notes on what is and is not enforced
 
