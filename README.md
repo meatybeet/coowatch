@@ -223,7 +223,10 @@ The host owns the session. The panel button in the room header opens everything:
 block or unblock the chat, hand over the host role, or remove them. Removing
 someone bans their token, so they cannot walk straight back in.
 
-**Polls** - the host asks a question with two to four answers. Everyone votes,
+**Renaming** - the host can rename the session at any time from the panel.
+
+**Polls** - the host asks a question with as many answers as they care to type,
+up to twenty. Everyone votes,
 results update live, votes can be changed, and the host can close or clear it.
 
 **Vote to remove** - any watcher can start a vote against another watcher. It
@@ -232,7 +235,17 @@ is immune. It needs at least three watchers to be worth starting; below that
 the host can simply remove someone.
 
 **Asking to host** - a guest can request the role from the panel. The host sees
-a badge and can accept or decline.
+a badge and can accept or decline. Handing the role over rebuilds every peer
+connection: a connection only carries video if it was created while that person
+was the host, so the new host needs fresh ones to be able to send anything.
+
+**Chat** - messages carry a time, `@name` tags someone, and clicking a message
+replies to it. A short tone plays when you are tagged, muted, unmuted, blocked
+or unblocked, and when someone asks to host. Everyone's avatar colour is
+derived from their name, so the same person looks the same on every device.
+
+**Help** - the question mark in the room header explains all of this to whoever
+you invited, so you do not have to.
 
 **Leaving** - when the host leaves with other people present, they choose
 between handing the room to someone specific or ending it for everyone. If the

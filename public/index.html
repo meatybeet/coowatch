@@ -279,6 +279,10 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="m-note" d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle class="m-note" cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle class="m-note" cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path class="m-slash" d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
 
+      <button id="help-btn" class="icon-btn" aria-label="How this works" title="How this works">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.6c-.6.2-.9.7-.9 1.3v.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>
+      </button>
+
       <button id="panel-btn" class="icon-btn" aria-label="Room settings" title="Room settings">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span id="panel-badge" class="badge" hidden></span>
@@ -356,6 +360,18 @@
         <span>Live Chat</span>
       </div>
       <ul id="chat-log" class="chat-log"></ul>
+      <div id="reply-bar" class="reply-bar" hidden>
+        <div class="reply-info">
+          <span class="reply-to" id="reply-name"></span>
+          <span class="reply-text" id="reply-text"></span>
+        </div>
+        <button type="button" id="reply-cancel" class="icon-btn" aria-label="Cancel reply">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div id="mention-pop" class="mention-pop" hidden></div>
+
       <form id="chat-form" class="chat-form">
         <input id="chat-input" type="text" placeholder="Say something..." maxlength="500" autocomplete="off">
         <button type="submit" class="primary compact">
@@ -397,13 +413,19 @@
         </label>
       </section>
 
+      <section class="panel-sec" id="rename-sec" hidden>
+        <h3>Session name</h3>
+        <div class="rename-row">
+          <input id="rename-input" type="text" placeholder="Movie night" maxlength="60">
+          <button id="rename-save" class="ghost">Save</button>
+        </div>
+      </section>
+
       <section class="panel-sec" id="poll-maker" hidden>
         <h3>Start a poll</h3>
         <input id="poll-q" type="text" placeholder="What should we watch next?" maxlength="140">
-        <input id="poll-o1" type="text" placeholder="Option 1" maxlength="60">
-        <input id="poll-o2" type="text" placeholder="Option 2" maxlength="60">
-        <input id="poll-o3" type="text" placeholder="Option 3 (optional)" maxlength="60">
-        <input id="poll-o4" type="text" placeholder="Option 4 (optional)" maxlength="60">
+        <div id="poll-options"></div>
+        <button id="poll-add" class="ghost wide">Add another answer</button>
         <button id="poll-create" class="primary compact">Start poll</button>
       </section>
 
@@ -434,6 +456,44 @@
 
     <button id="leave-destroy" class="ghost wide danger">End session for everyone</button>
     <button id="leave-cancel" class="ghost wide">Stay in room</button>
+  </div>
+</div>
+
+<div id="help-dialog" class="modal" hidden>
+  <div class="modal-scrim" id="help-scrim"></div>
+  <div class="modal-card help-card">
+    <div class="row-between">
+      <h3>How CooWatch works</h3>
+      <button id="help-close" class="icon-btn" aria-label="Close">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="help-body">
+      <h4>Watching together</h4>
+      <p>Whoever starts a session is the <strong>host</strong>. They choose what plays: a file from their device, their screen or a browser tab, or a YouTube link. Everyone else receives it.</p>
+      <p>With a file or a screen, the host's machine sends the picture directly to each viewer, so when they pause, it freezes for everybody. A YouTube session plays on each device separately and the clocks are kept together instead.</p>
+
+      <h4>Controls</h4>
+      <p>Play, pause and the seek bar work for everyone in the room, not just the host, unless the host locks them. Double-click the video or press <kbd>F</kbd> for fullscreen, <kbd>Space</kbd> to play or pause, and <kbd>Enter</kbd> to chat without leaving fullscreen.</p>
+
+      <h4>Talking</h4>
+      <p>Your microphone starts <strong>muted</strong> every time. Nothing is sent until you press the mic button. Type <kbd>@</kbd> to tag someone, and click any message to reply to it.</p>
+      <p>Wear headphones if you are the one sharing a file: otherwise its sound goes back out through your microphone as an echo.</p>
+
+      <h4>If you are the host</h4>
+      <p>The room panel lets you rename the session, close the chat, lock playback, mute everyone, and run a poll. Per person you can mute for 30 seconds or indefinitely, block them from the chat, hand over the host role, or remove them.</p>
+      <p>Muting someone is a request their browser honours, not a hard block, so treat it as a courtesy rather than a guarantee. Someone who muted themselves stays muted; only they can undo that.</p>
+
+      <h4>Everyone else</h4>
+      <p>You can ask to become the host from the panel, and start a vote to remove someone if at least three people are watching. The host cannot be voted out.</p>
+
+      <h4>Second screen</h4>
+      <p>Joining from a phone as a <strong>second screen</strong> gives you chat and the playback controls without pulling the video again, so it costs the host no extra bandwidth. Handy for chatting while you watch on a laptop.</p>
+
+      <h4>Leaving</h4>
+      <p>Reloading keeps your place; the room holds your seat for a minute and a half. When the host leaves they choose whether to hand the room over or close it. Every session is saved to <strong>History</strong> on your own device, transcript included.</p>
+    </div>
   </div>
 </div>
 

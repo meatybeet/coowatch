@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3000;
 // reload does not look like leaving.
 const GRACE_MS = 90000;
 const VOTE_KICK_MS = 60000;
+// Generous rather than unlimited: past this a poll stops being readable.
+const MAX_POLL_OPTIONS = 20;
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -182,7 +184,9 @@ function setHost(session, memberId) {
   session.hostId = memberId;
   session.hostRequests.delete(memberId);
   const host = session.members.get(memberId);
-  broadcast(session, { t: 'host-changed', hostId: memberId, name: host ? host.name : 'Someone' });
+  const name = host ? host.name : 'Someone';
+  broadcast(session, { t: 'host-changed', hostId: memberId, name });
+  broadcast(session, { t: 'system', text: `${name} is now the host.` });
   pushRoster(session);
 }
 
@@ -448,8 +452,22 @@ wss.on('connection', (ws) => {
           send(ws, { t: 'error', message: 'The chat is closed.' });
           break;
         }
+        let replyTo = null;
+        if (msg.replyTo && msg.replyTo.id) {
+          replyTo = {
+            id: String(msg.replyTo.id).slice(0, 40),
+            name: String(msg.replyTo.name || '').slice(0, 24),
+            text: String(msg.replyTo.text || '').slice(0, 120)
+          };
+        }
         broadcast(session, {
-          t: 'chat', from: me.id, name: me.name, text, ts: Date.now()
+          t: 'chat',
+          id: crypto.randomUUID(),
+          from: me.id,
+          name: me.name,
+          text,
+          replyTo,
+          ts: Date.now()
         }, me.id);
         break;
       }
@@ -491,6 +509,16 @@ wss.on('connection', (ws) => {
         if (typeof msg.muteAll === 'boolean') session.config.muteAll = msg.muteAll;
         broadcast(session, { t: 'config', config: session.config, by: me.name });
         pushRoster(session);
+        break;
+      }
+
+      case 'host:rename': {
+        if (!isHost) break;
+        const title = String(msg.title || '').trim().slice(0, 60);
+        if (!title || title === session.title) break;
+        session.title = title;
+        broadcast(session, { t: 'renamed', title, by: me.name });
+        broadcast(session, { t: 'system', text: `${me.name} renamed the session to "${title}".` });
         break;
       }
 
@@ -539,7 +567,6 @@ wss.on('connection', (ws) => {
       case 'host:transfer': {
         if (!isHost || !target || target.companion) break;
         setHost(session, target.id);
-        broadcast(session, { t: 'system', text: `${target.name} is now the host.` });
         break;
       }
 
@@ -559,7 +586,6 @@ wss.on('connection', (ws) => {
         session.hostRequests.delete(target.id);
         if (msg.accept) {
           setHost(session, target.id);
-          broadcast(session, { t: 'system', text: `${target.name} is now the host.` });
         } else {
           send(target.ws, { t: 'system', text: 'The host declined your request.' });
           pushRoster(session);
@@ -575,7 +601,7 @@ wss.on('connection', (ws) => {
         const options = (Array.isArray(msg.options) ? msg.options : [])
           .map((o) => String(o || '').trim().slice(0, 60))
           .filter(Boolean)
-          .slice(0, 4);
+          .slice(0, MAX_POLL_OPTIONS);
         if (!question || options.length < 2) {
           send(ws, { t: 'error', message: 'A poll needs a question and at least two options.' });
           break;

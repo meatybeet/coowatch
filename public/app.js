@@ -42,12 +42,17 @@ const ui = {
   historyDetail: $('history-detail'), historyBack: $('history-back'),
   detailTitle: $('detail-title'), detailFacts: $('detail-facts'),
   detailPeople: $('detail-people'), detailLog: $('detail-log'),
+  helpBtn: $('help-btn'), helpDialog: $('help-dialog'), helpClose: $('help-close'),
+  helpScrim: $('help-scrim'),
+  renameSec: $('rename-sec'), renameInput: $('rename-input'), renameSave: $('rename-save'),
+  pollOptionsWrap: $('poll-options'), pollAdd: $('poll-add'),
+  replyBar: $('reply-bar'), replyName: $('reply-name'), replyText: $('reply-text'),
+  replyCancel: $('reply-cancel'), mentionPop: $('mention-pop'),
   panel: $('panel'), panelBtn: $('panel-btn'), panelClose: $('panel-close'),
   panelScrim: $('panel-scrim'), panelBadge: $('panel-badge'),
   hostSettings: $('host-settings'), cfgChat: $('cfg-chat'), cfgLock: $('cfg-lock'),
   cfgMuteAll: $('cfg-muteall'),
   pollMaker: $('poll-maker'), pollQ: $('poll-q'), pollCreate: $('poll-create'),
-  pollOpts: [$('poll-o1'), $('poll-o2'), $('poll-o3'), $('poll-o4')],
   memberList: $('member-list'), peopleCount: $('people-count'),
   guestActions: $('guest-actions'), askHost: $('ask-host'),
   banners: $('banners'), chatNote: $('chat-note'),
@@ -148,17 +153,67 @@ function popMessage(who, text, kind) {
   setTimeout(() => pop.remove(), 7300);
 }
 
-function chatMessage(who, text, mine) {
+// Splits @names out of the text so they can be highlighted, without ever
+// putting user text near innerHTML.
+function renderBody(text) {
+  const frag = document.createDocumentFragment();
+  const pattern = /@([\p{L}\p{N}_'-]{1,24})/gu;
+  let last = 0;
+  let m;
+  while ((m = pattern.exec(text))) {
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const span = document.createElement('span');
+    span.className = 'mention';
+    span.textContent = m[0];
+    const me = myName();
+    if (me && m[1].toLowerCase() === me.toLowerCase()) span.classList.add('is-me');
+    frag.appendChild(span);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+
+function chatMessage(who, text, mine, meta) {
   historyLog('chat', mine ? (ui.name.value.trim() || 'You') : who, text);
   const li = document.createElement('li');
-  if (mine) li.className = 'me';
-  else {
+  if (mine) li.classList.add('me');
+  if (!mine && mentionsMe(text)) li.classList.add('tagged');
+
+  if (meta && meta.replyTo) {
+    const quote = document.createElement('div');
+    quote.className = 'quote';
+    const qname = document.createElement('span');
+    qname.className = 'quote-name';
+    qname.textContent = meta.replyTo.name;
+    quote.appendChild(qname);
+    quote.appendChild(document.createTextNode(meta.replyTo.text));
+    li.appendChild(quote);
+  }
+
+  if (!mine) {
     const strong = document.createElement('span');
     strong.className = 'who';
     strong.textContent = who;
+    strong.style.color = avatarColor(who);
     li.appendChild(strong);
   }
-  li.appendChild(document.createTextNode(text));
+
+  li.appendChild(renderBody(text));
+
+  const time = document.createElement('span');
+  time.className = 'msg-time';
+  time.textContent = new Date((meta && meta.ts) || Date.now())
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  li.appendChild(time);
+
+  const id = (meta && meta.id) || ('m' + Date.now() + Math.random().toString(36).slice(2, 6));
+  li.classList.add('replyable');
+  li.title = 'Click to reply';
+  li.addEventListener('click', () => {
+    setReply({ id, name: mine ? (myName() || 'You') : who, text });
+  });
+
   ui.chatLog.appendChild(li);
   ui.chatLog.scrollTop = ui.chatLog.scrollHeight;
   popMessage(mine ? null : who, text, mine ? 'me' : '');
@@ -453,6 +508,11 @@ function handleMessage(msg) {
       afterStateChange();
       break;
 
+    case 'renamed':
+      if (state.session) state.session.title = msg.title;
+      ui.roomTitle.textContent = msg.title;
+      break;
+
     case 'host-changed':
       if (state.session) state.session.hostId = msg.hostId;
       state.isHost = msg.hostId === state.myId;
@@ -462,11 +522,13 @@ function handleMessage(msg) {
       break;
 
     case 'host-request':
+      cue('request');
       sysMessage(`${msg.name} asked to become the host.`);
       toast(`${msg.name} wants to host`);
       break;
 
     case 'you-muted':
+      cue('muted');
       sysMessage(msg.seconds
         ? `${msg.by} muted you for ${msg.seconds} seconds.`
         : `${msg.by} muted you.`);
@@ -474,10 +536,12 @@ function handleMessage(msg) {
       break;
 
     case 'you-unmuted':
+      cue('unmuted');
       sysMessage(`${msg.by} unmuted you.`);
       break;
 
     case 'chat-block':
+      cue(msg.blocked ? 'blocked' : 'unblocked');
       sysMessage(msg.blocked
         ? `${msg.by} blocked you from the chat.`
         : `${msg.by} let you back into the chat.`);
@@ -550,7 +614,8 @@ function handleMessage(msg) {
       break;
 
     case 'chat':
-      chatMessage(msg.name, msg.text);
+      chatMessage(msg.name, msg.text, false, msg);
+      if (mentionsMe(msg.text)) cue('tagged');
       break;
 
     case 'reaction':
@@ -627,11 +692,8 @@ async function enterRoom(msg) {
 
   const isYouTube = state.mode === 'youtube';
   resetVideoElement();
-  ui.hostTools.hidden = !state.isHost;
-  ui.pickFile.hidden = isYouTube;
-  ui.shareBtn.hidden = isYouTube;
+  wasHostLastTime = state.isHost;
   setShareUi();
-  ui.ytTools.hidden = !isYouTube;
   ui.ytHolder.hidden = !isYouTube;
   ui.video.hidden = isYouTube;
 
@@ -729,6 +791,9 @@ function goHome() {
   state.config = { chatOpen: true, lockControls: false, muteAll: false };
   ui.banners.innerHTML = '';
   ui.chatNote.hidden = true;
+  clearReply();
+  closeMentions();
+  closeHelp();
   state.duration = 0;
   state.position = 0;
   state.paused = true;
@@ -766,6 +831,7 @@ function peerChip(name, isHost, companion) {
   const av = document.createElement('span');
   av.className = 'av';
   av.textContent = companion ? '2' : (name.trim()[0] || '?').toUpperCase();
+  if (!companion) paintAvatar(av, name);
   chip.appendChild(av);
   let suffix = '';
   if (isHost) suffix = ' (host)';
@@ -935,6 +1001,18 @@ async function handleSignal(peerId, data) {
   }
 
   try {
+    if (data.reset) {
+      // The other side is rebuilding this connection from scratch, so drop
+      // ours and wait for their offer rather than answering on a stale one.
+      closePeer(peerId);
+      const info = state.roster.find((m) => m.id === peerId);
+      state.peers.set(peerId, {
+        name: info ? info.name : (entry.name || 'Guest'),
+        companion: !!(info && info.companion),
+        pc: null, audioEl: null, pending: []
+      });
+      return;
+    }
     if (data.sdp && data.sdp.type === 'offer') {
       const pc = entry.pc || createPeer(peerId, false);
       await pc.setRemoteDescription(data.sdp);
@@ -1637,9 +1715,17 @@ ui.chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = ui.chatInput.value.trim();
   if (!text || !canChat()) return;
-  send({ t: 'chat', text });
-  chatMessage('You', text, true);
+  const payload = { t: 'chat', text };
+  if (replyTarget) payload.replyTo = replyTarget;
+  send(payload);
+  chatMessage(ui.name.value.trim() || 'You', text, true, {
+    id: 'local-' + Date.now(),
+    ts: Date.now(),
+    replyTo: replyTarget
+  });
+  clearReply();
   ui.chatInput.value = '';
+  closeMentions();
 });
 
 for (const emoji of EMOJIS) {
@@ -1761,7 +1847,10 @@ function canChat() {
 }
 
 // One place that re-derives everything the server may have changed.
+let wasHostLastTime = false;
+
 function afterStateChange() {
+  applyHostTools();
   renderPeers();
   renderPanel();
   renderBanners();
@@ -1784,6 +1873,57 @@ function afterStateChange() {
   const pending = state.roster.filter((m) => m.wantsHost).length;
   ui.panelBadge.hidden = !(state.isHost && pending);
   ui.panelBadge.textContent = String(pending);
+}
+
+// A connection carries video only if it was built while we were the host: the
+// transceivers are laid down at creation and never appear later. So inheriting
+// the role means rebuilding every peer connection, or the new host has the
+// buttons but no channel to send a picture down.
+function rebuildPeersAsHost() {
+  if (state.companion || state.mode === 'youtube') return;
+  for (const [peerId, entry] of [...state.peers]) {
+    if (entry.companion) continue;
+    send({ t: 'signal', to: peerId, data: { reset: true } });
+    const name = entry.name;
+    const companion = entry.companion;
+    closePeer(peerId);
+    state.peers.set(peerId, { name, companion, pc: null, audioEl: null, pending: [] });
+    createPeer(peerId, true);
+  }
+}
+
+// Host-only affordances have to follow the role around the room, not be set
+// once on the way in.
+function applyHostTools() {
+  const isYouTube = state.mode === 'youtube';
+  ui.hostTools.hidden = !state.isHost || state.companion;
+  ui.pickFile.hidden = isYouTube;
+  ui.shareBtn.hidden = isYouTube;
+  ui.ytTools.hidden = !isYouTube;
+
+  if (wasHostLastTime && !state.isHost) {
+    // Handed the role over: stop pushing our own picture at everyone.
+    if (sharingScreen()) stopScreenShare();
+    else if (state.localFilm || ui.video.src) {
+      stopLocalFilm();
+      detachFilm();
+      clearInterval(state.progressTimer);
+      state.progressTimer = null;
+      state.streamKind = 'none';
+      resetVideoElement();
+      showOverlay('You are no longer the host. Waiting for them to pick something.', null, null, true);
+    }
+  }
+
+  if (!wasHostLastTime && state.isHost && state.session) {
+    rebuildPeersAsHost();
+    ui.renameInput.value = state.session.title || '';
+    if (state.mode !== 'youtube' && !state.localFilm && !ui.video.src) {
+      showOverlay('You are the host now. Choose a video file or share your screen.',
+        'Choose file', () => ui.fileInput.click());
+    }
+  }
+  wasHostLastTime = state.isHost;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1824,6 +1964,10 @@ function renderPanel() {
 
   ui.hostSettings.hidden = !state.isHost;
   ui.pollMaker.hidden = !state.isHost;
+  ui.renameSec.hidden = !state.isHost;
+  if (state.session && document.activeElement !== ui.renameInput) {
+    ui.renameInput.value = state.session.title || '';
+  }
   ui.guestActions.hidden = state.isHost || state.companion;
 
   ui.cfgChat.checked = state.config.chatOpen;
@@ -1843,6 +1987,7 @@ function renderPanel() {
     const av = document.createElement('span');
     av.className = 'av';
     av.textContent = (m.name.trim()[0] || '?').toUpperCase();
+    paintAvatar(av, m.name);
     const name = document.createElement('span');
     name.className = 'member-name';
     name.textContent = m.id === state.myId ? m.name + ' (you)' : m.name;
@@ -1925,14 +2070,14 @@ ui.askHost.addEventListener('click', () => {
 
 ui.pollCreate.addEventListener('click', () => {
   const question = ui.pollQ.value.trim();
-  const options = ui.pollOpts.map((i) => i.value.trim()).filter(Boolean);
+  const options = pollRows().map((i) => i.value.trim()).filter(Boolean);
   if (!question || options.length < 2) {
-    toast('A poll needs a question and two options.');
+    toast('A poll needs a question and two answers.');
     return;
   }
   send({ t: 'host:poll', question, options });
   ui.pollQ.value = '';
-  ui.pollOpts.forEach((i) => { i.value = ''; });
+  resetPollBuilder();
   closePanel();
 });
 
@@ -2254,6 +2399,8 @@ window.addEventListener('hashchange', () => {
 function renderProfile() {
   const name = ui.name.value.trim();
   ui.profileAv.textContent = name ? name[0].toUpperCase() : '?';
+  if (name) paintAvatar(ui.profileAv, name);
+  else ui.profileAv.style.background = '';
   ui.profileName.textContent = name || 'Add name';
   ui.profileBtn.classList.toggle('unset', !name);
 }
@@ -2490,6 +2637,7 @@ function renderHistoryDetail(id) {
     const av = document.createElement('span');
     av.className = 'av';
     av.textContent = (p.name[0] || '?').toUpperCase();
+    paintAvatar(av, p.name);
     const label = document.createElement('span');
     label.textContent = p.name + (p.companion ? ' (2nd screen)' : '');
     const when = document.createElement('span');
@@ -2540,3 +2688,273 @@ ui.historyClear.addEventListener('click', () => {
 
 renderProfile();
 showView(location.hash.replace(/^#\/?/, '') || 'browse', true);
+
+/* ------------------------------------------------------------------ */
+/* notification cues                                                   */
+/* ------------------------------------------------------------------ */
+
+// Synthesised rather than shipped as files: a handful of oscillator notes
+// costs nothing to download and cannot be a licensing problem.
+const CUES = {
+  muted:     { notes: [[660, 0], [440, 0.12]], type: 'sine' },
+  unmuted:   { notes: [[440, 0], [660, 0.12]], type: 'sine' },
+  blocked:   { notes: [[300, 0], [200, 0.14]], type: 'square', gain: 0.05 },
+  unblocked: { notes: [[400, 0], [600, 0.1], [800, 0.2]], type: 'sine' },
+  tagged:    { notes: [[880, 0], [1170, 0.09]], type: 'triangle' },
+  request:   { notes: [[620, 0], [780, 0.1], [620, 0.2]], type: 'sine' }
+};
+
+let audioCtx = null;
+
+function cue(name) {
+  const spec = CUES[name];
+  if (!spec || !musicAvailable) { /* still fine to beep without the mp3 */ }
+  if (!spec) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    for (const [freq, at] of spec.notes) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const start = audioCtx.currentTime + at;
+      const peak = spec.gain || 0.07;
+      osc.type = spec.type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(peak, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.18);
+    }
+  } catch {
+    // an unavailable audio context is not worth breaking anything over
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* avatar colours                                                      */
+/* ------------------------------------------------------------------ */
+
+// Derived from the name, so the same person is the same colour on every
+// device without anyone having to agree on it.
+function avatarColor(name) {
+  const text = String(name || '?');
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  const sat = 58 + (hash >> 9) % 18;
+  const light = 46 + (hash >> 17) % 10;
+  return `hsl(${hue} ${sat}% ${light}%)`;
+}
+
+function paintAvatar(el, name) {
+  el.style.background = avatarColor(name);
+  el.style.backgroundImage = 'none';
+}
+
+/* ------------------------------------------------------------------ */
+/* mentions and replies                                                */
+/* ------------------------------------------------------------------ */
+
+let replyTarget = null;
+
+function myName() {
+  return (ui.name.value || '').trim();
+}
+
+function mentionsMe(text) {
+  const me = myName();
+  if (!me) return false;
+  return new RegExp('@' + me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text || '');
+}
+
+function setReply(entry) {
+  replyTarget = { id: entry.id, name: entry.name, text: entry.text.slice(0, 120) };
+  ui.replyName.textContent = 'Replying to ' + entry.name;
+  ui.replyText.textContent = entry.text;
+  ui.replyBar.hidden = false;
+  ui.chatInput.focus();
+}
+
+function clearReply() {
+  replyTarget = null;
+  ui.replyBar.hidden = true;
+}
+
+ui.replyCancel.addEventListener('click', clearReply);
+
+// --- the @ picker -----------------------------------------------------
+
+function closeMentions() {
+  ui.mentionPop.hidden = true;
+}
+
+function mentionQuery() {
+  const value = ui.chatInput.value;
+  const caret = ui.chatInput.selectionStart || value.length;
+  const before = value.slice(0, caret);
+  const at = before.lastIndexOf('@');
+  if (at === -1) return null;
+  if (at > 0 && !/\s/.test(before[at - 1])) return null;
+  const term = before.slice(at + 1);
+  if (/\s/.test(term)) return null;
+  return { at, caret, term };
+}
+
+function insertMention(name) {
+  const q = mentionQuery();
+  const value = ui.chatInput.value;
+  if (!q) {
+    ui.chatInput.value = value + (value && !value.endsWith(' ') ? ' ' : '') + '@' + name + ' ';
+  } else {
+    ui.chatInput.value = value.slice(0, q.at) + '@' + name + ' ' + value.slice(q.caret);
+  }
+  closeMentions();
+  ui.chatInput.focus();
+}
+
+function renderMentions() {
+  const q = mentionQuery();
+  if (!q) return closeMentions();
+  const term = q.term.toLowerCase();
+  const matches = state.roster
+    .filter((m) => m.id !== state.myId && m.name.toLowerCase().startsWith(term))
+    .slice(0, 6);
+  if (!matches.length) return closeMentions();
+
+  ui.mentionPop.innerHTML = '';
+  for (const m of matches) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'mention-row';
+    const av = document.createElement('span');
+    av.className = 'av';
+    av.textContent = (m.name[0] || '?').toUpperCase();
+    paintAvatar(av, m.name);
+    row.appendChild(av);
+    row.appendChild(document.createTextNode(m.name));
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      insertMention(m.name);
+    });
+    ui.mentionPop.appendChild(row);
+  }
+  ui.mentionPop.hidden = false;
+}
+
+ui.chatInput.addEventListener('input', renderMentions);
+ui.chatInput.addEventListener('blur', () => setTimeout(closeMentions, 120));
+ui.chatInput.addEventListener('keydown', (e) => {
+  if (ui.mentionPop.hidden) return;
+  if (e.key === 'Escape') { closeMentions(); return; }
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    const first = ui.mentionPop.querySelector('.mention-row');
+    if (first) {
+      e.preventDefault();
+      first.dispatchEvent(new MouseEvent('mousedown'));
+    }
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* session rename                                                      */
+/* ------------------------------------------------------------------ */
+
+function saveRename() {
+  const title = ui.renameInput.value.trim();
+  if (!title || !state.session || title === state.session.title) return;
+  send({ t: 'host:rename', title });
+  toast('Session renamed');
+}
+
+ui.renameSave.addEventListener('click', saveRename);
+ui.renameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+});
+
+/* ------------------------------------------------------------------ */
+/* poll builder                                                        */
+/* ------------------------------------------------------------------ */
+
+const POLL_MAX = 20;
+
+function pollRows() {
+  return [...ui.pollOptionsWrap.querySelectorAll('input')];
+}
+
+function addPollOption(value, focus) {
+  const rows = pollRows();
+  if (rows.length >= POLL_MAX) {
+    toast('Twenty answers is the limit.');
+    return;
+  }
+  const row = document.createElement('div');
+  row.className = 'poll-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 60;
+  input.placeholder = 'Answer ' + (rows.length + 1);
+  input.value = value || '';
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const all = pollRows();
+    const i = all.indexOf(input);
+    if (i === all.length - 1) addPollOption('', true);
+    else all[i + 1].focus();
+  });
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'icon-btn poll-remove';
+  remove.setAttribute('aria-label', 'Remove this answer');
+  remove.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  remove.addEventListener('click', () => {
+    if (pollRows().length <= 2) {
+      toast('A poll needs at least two answers.');
+      return;
+    }
+    row.remove();
+    renumberPollRows();
+  });
+
+  row.appendChild(input);
+  row.appendChild(remove);
+  ui.pollOptionsWrap.appendChild(row);
+  renumberPollRows();
+  if (focus) input.focus();
+}
+
+function renumberPollRows() {
+  pollRows().forEach((input, i) => { input.placeholder = 'Answer ' + (i + 1); });
+}
+
+function resetPollBuilder() {
+  ui.pollOptionsWrap.innerHTML = '';
+  addPollOption('');
+  addPollOption('');
+}
+
+ui.pollAdd.addEventListener('click', () => addPollOption('', true));
+resetPollBuilder();
+
+/* ------------------------------------------------------------------ */
+/* help                                                                */
+/* ------------------------------------------------------------------ */
+
+function openHelp() { ui.helpDialog.hidden = false; }
+function closeHelp() { ui.helpDialog.hidden = true; }
+
+ui.helpBtn.addEventListener('click', openHelp);
+ui.helpClose.addEventListener('click', closeHelp);
+ui.helpScrim.addEventListener('click', closeHelp);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !ui.helpDialog.hidden) closeHelp();
+});

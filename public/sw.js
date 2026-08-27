@@ -1,4 +1,4 @@
-const CACHE = 'coowatch-v6';
+const CACHE = 'coowatch-v7';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
