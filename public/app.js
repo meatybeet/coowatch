@@ -36,6 +36,12 @@ const ui = {
   peers: $('peers'), chatLog: $('chat-log'), chatForm: $('chat-form'), chatInput: $('chat-input'),
   toast: $('toast'),
   waitingAudio: $('waiting-audio'), musicBtn: $('music-btn'), musicBtnHome: $('music-btn-home'),
+  profileBtn: $('profile-btn'), profileAv: $('profile-av'), profileName: $('profile-name'),
+  profileMenu: $('profile-menu'),
+  historyList: $('history-list'), historyEmpty: $('history-empty'), historyClear: $('history-clear'),
+  historyDetail: $('history-detail'), historyBack: $('history-back'),
+  detailTitle: $('detail-title'), detailFacts: $('detail-facts'),
+  detailPeople: $('detail-people'), detailLog: $('detail-log'),
   panel: $('panel'), panelBtn: $('panel-btn'), panelClose: $('panel-close'),
   panelScrim: $('panel-scrim'), panelBadge: $('panel-badge'),
   hostSettings: $('host-settings'), cfgChat: $('cfg-chat'), cfgLock: $('cfg-lock'),
@@ -49,6 +55,15 @@ const ui = {
   heirWrap: $('leave-heir-wrap'), heir: $('heir'), leaveTransfer: $('leave-transfer'),
   leaveDestroy: $('leave-destroy'), leaveCancel: $('leave-cancel')
 };
+
+// Session history lives on this device only. Declared up here because
+// sysMessage() and chatMessage() feed it, and those are defined long before
+// the history section further down.
+const HISTORY_KEY = 'wt-history';
+const HISTORY_MAX = 40;
+const LOG_MAX = 800;
+
+let live = null; // the record for the session currently open
 
 const state = {
   ws: null,
@@ -106,6 +121,7 @@ function toast(message) {
 }
 
 function sysMessage(text) {
+  historyLog('system', null, text);
   const li = document.createElement('li');
   li.className = 'sys';
   li.textContent = text;
@@ -133,6 +149,7 @@ function popMessage(who, text, kind) {
 }
 
 function chatMessage(who, text, mine) {
+  historyLog('chat', mine ? (ui.name.value.trim() || 'You') : who, text);
   const li = document.createElement('li');
   if (mine) li.className = 'me';
   else {
@@ -252,6 +269,7 @@ function homeError(message) {
 
 function rememberName() {
   try { localStorage.setItem('wt-name', ui.name.value.trim()); } catch {}
+  renderProfile();
 }
 
 ui.createBtn.addEventListener('click', () => {
@@ -279,8 +297,7 @@ let pendingJoin = null;
 function askForName(code) {
   pendingJoin = code || null;
   homeError('Almost there - add a display name and we will take you straight in.');
-  ui.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  setTimeout(() => ui.name.focus(), 260);
+  openProfile();
 }
 
 function doJoin(code, btn) {
@@ -303,6 +320,8 @@ ui.name.addEventListener('keydown', (e) => {
   const name = ui.name.value.trim();
   if (!name) return;
   homeError('');
+  rememberName();
+  closeProfile();
   if (pendingJoin) doJoin(pendingJoin, null);
   else if (ui.code.value.trim()) ui.joinBtn.click();
 });
@@ -420,6 +439,9 @@ function handleMessage(msg) {
 
     case 'roster':
       state.roster = msg.members;
+      for (const m of msg.members) {
+        if (m.id !== state.myId) historySeen(m.name, m.companion);
+      }
       if (state.session) state.session.hostId = msg.hostId;
       state.me = msg.members.find((m) => m.id === state.myId) || state.me;
       state.isHost = !!state.me && state.me.isHost;
@@ -577,6 +599,8 @@ async function enterRoom(msg) {
   state.selfMuted = rejoined ? !!(msg.me && msg.me.selfMuted) : true;
   if (!rejoined) send({ t: 'selfMute', muted: true });
   saveResume(msg.session.code, msg.token);
+  historyStart(msg.session, msg.session.hostId === msg.you, msg.me && msg.me.companion);
+  for (const peer of msg.peers) historySeen(peer.name, peer.companion);
   for (const id of [...state.peers.keys()]) closePeer(id);
   state.session = msg.session;
   state.isHost = msg.session.hostId === msg.you;
@@ -689,6 +713,7 @@ function goHome() {
   state.companion = false;
   ui.room.classList.remove('companion');
   ui.companionCard.hidden = true;
+  historyEnd();
   setTimeout(updateMusic, 0);
   state.filmTracks = [];
   state.gotFilm = false;
@@ -710,6 +735,7 @@ function goHome() {
 
   ui.room.classList.remove('active');
   ui.home.classList.add('active');
+  showView('browse');
   hideOverlay();
   lastListSignature = null;
   loadPublicSessions();
@@ -2146,3 +2172,336 @@ if (ui.musicBtn) ui.musicBtn.addEventListener('click', toggleMusic);
 if (ui.musicBtnHome) ui.musicBtnHome.addEventListener('click', toggleMusic);
 
 updateMusic();
+
+/* ------------------------------------------------------------------ */
+/* home views                                                          */
+/* ------------------------------------------------------------------ */
+
+const VIEWS = ['browse', 'create', 'join', 'history'];
+let currentView = 'browse';
+
+function showView(name, skipHash) {
+  if (!VIEWS.includes(name)) name = 'browse';
+  currentView = name;
+
+  for (const view of document.querySelectorAll('.view')) {
+    view.classList.toggle('is-active', view.id === 'view-' + name);
+  }
+  for (const link of document.querySelectorAll('.nav-link')) {
+    const on = link.dataset.view === name;
+    link.classList.toggle('is-active', on);
+    link.setAttribute('aria-selected', String(on));
+  }
+
+  homeError('');
+  closeProfile();
+  if (name === 'history') renderHistoryList();
+  if (name === 'browse') loadPublicSessions(true);
+  if (!skipHash) location.hash = name === 'browse' ? '' : '#' + name;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.addEventListener('click', (e) => {
+  const trigger = e.target.closest('[data-view]');
+  if (!trigger) return;
+  e.preventDefault();
+  showView(trigger.dataset.view);
+});
+
+window.addEventListener('hashchange', () => {
+  showView(location.hash.replace(/^#\/?/, '') || 'browse', true);
+});
+
+/* ------------------------------------------------------------------ */
+/* profile menu                                                        */
+/* ------------------------------------------------------------------ */
+
+function renderProfile() {
+  const name = ui.name.value.trim();
+  ui.profileAv.textContent = name ? name[0].toUpperCase() : '?';
+  ui.profileName.textContent = name || 'Add name';
+  ui.profileBtn.classList.toggle('unset', !name);
+}
+
+function openProfile() {
+  ui.profileMenu.hidden = false;
+  ui.profileBtn.setAttribute('aria-expanded', 'true');
+  setTimeout(() => ui.name.focus(), 40);
+}
+
+function closeProfile() {
+  ui.profileMenu.hidden = true;
+  ui.profileBtn.setAttribute('aria-expanded', 'false');
+}
+
+ui.profileBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (ui.profileMenu.hidden) openProfile();
+  else closeProfile();
+});
+
+ui.profileMenu.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => { if (!ui.profileMenu.hidden) closeProfile(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !ui.profileMenu.hidden) closeProfile();
+});
+
+ui.name.addEventListener('input', renderProfile);
+
+/* ------------------------------------------------------------------ */
+/* session history, kept on this device                                */
+/* ------------------------------------------------------------------ */
+
+
+function readHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(records) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(records.slice(0, HISTORY_MAX)));
+  } catch {
+    // storage full or blocked: history is a nicety, never break the session
+  }
+}
+
+// Everything is recorded from what this browser actually saw, so a guest's
+// history covers the part of the session they were present for.
+function historyStart(session, isHost, companion) {
+  const records = readHistory();
+  const open = records.find((r) => r.code === session.code && !r.endedAt);
+  if (open) {
+    live = open; // rejoining after a reload continues the same record
+    return;
+  }
+  live = {
+    id: 'h' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36),
+    code: session.code,
+    title: session.title,
+    source: session.source,
+    isPublic: session.isPublic,
+    wasHost: isHost,
+    companion: !!companion,
+    startedAt: Date.now(),
+    endedAt: null,
+    people: [],
+    log: []
+  };
+  records.unshift(live);
+  writeHistory(records);
+}
+
+function historySave() {
+  if (!live) return;
+  const records = readHistory();
+  const i = records.findIndex((r) => r.id === live.id);
+  if (i === -1) records.unshift(live);
+  else records[i] = live;
+  writeHistory(records);
+}
+
+function historyLog(kind, name, text) {
+  if (!live) return;
+  live.log.push({ t: Date.now(), kind, name: name || '', text: String(text || '') });
+  if (live.log.length > LOG_MAX) live.log.splice(0, live.log.length - LOG_MAX);
+  historySave();
+}
+
+function historySeen(name, companion) {
+  if (!live || !name) return;
+  const known = live.people.find((p) => p.name === name);
+  if (known) {
+    known.seenAt = Date.now();
+    return;
+  }
+  live.people.push({ name, companion: !!companion, firstSeen: Date.now(), seenAt: Date.now() });
+  historySave();
+}
+
+function historyEnd() {
+  if (!live) return;
+  live.endedAt = Date.now();
+  historySave();
+  live = null;
+}
+
+/* ---------- rendering ---------- */
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '0m';
+  // Check the raw value first: rounding 30s would report it as a whole minute.
+  if (ms < 60000) return 'under a minute';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return mins + ' min';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h + 'h' + (m ? ' ' + m + 'm' : '');
+}
+
+function fmtWhen(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return 'Today at ' + time;
+  const yesterday = new Date(today.getTime() - 86400000);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday at ' + time;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' at ' + time;
+}
+
+function sourceLabel(record) {
+  if (record.source === 'youtube') return 'YouTube';
+  return 'From device';
+}
+
+function renderHistoryList() {
+  const records = readHistory();
+  ui.historyDetail.hidden = true;
+  ui.historyList.hidden = false;
+  ui.historyList.innerHTML = '';
+  ui.historyEmpty.hidden = records.length > 0;
+  ui.historyClear.disabled = records.length === 0;
+
+  records.forEach((r, i) => {
+    const li = document.createElement('li');
+    li.className = 'history-row';
+    li.style.animationDelay = (i * 35) + 'ms';
+
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'history-main';
+
+    const top = document.createElement('div');
+    top.className = 'history-title';
+    top.textContent = r.title || 'Session';
+    if (!r.endedAt) {
+      const dot = document.createElement('span');
+      dot.className = 'tag host';
+      dot.textContent = 'Open';
+      top.appendChild(dot);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const people = r.people.length;
+    meta.textContent = [
+      fmtWhen(r.startedAt),
+      fmtDuration((r.endedAt || Date.now()) - r.startedAt),
+      people ? people + (people === 1 ? ' person' : ' people') : 'nobody else',
+      r.wasHost ? 'you hosted' : 'you joined'
+    ].join(' · ');
+
+    main.appendChild(top);
+    main.appendChild(meta);
+    main.addEventListener('click', () => renderHistoryDetail(r.id));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'ghost small';
+    del.textContent = 'Delete';
+    del.addEventListener('click', () => {
+      writeHistory(readHistory().filter((x) => x.id !== r.id));
+      renderHistoryList();
+    });
+
+    li.appendChild(main);
+    li.appendChild(del);
+    ui.historyList.appendChild(li);
+  });
+}
+
+function fact(dl, label, value) {
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  dd.textContent = value;
+  dl.appendChild(dt);
+  dl.appendChild(dd);
+}
+
+function renderHistoryDetail(id) {
+  const record = readHistory().find((r) => r.id === id);
+  if (!record) return renderHistoryList();
+
+  ui.historyList.hidden = true;
+  ui.historyEmpty.hidden = true;
+  ui.historyDetail.hidden = false;
+  ui.detailTitle.textContent = record.title || 'Session';
+
+  ui.detailFacts.innerHTML = '';
+  fact(ui.detailFacts, 'Started', fmtWhen(record.startedAt));
+  fact(ui.detailFacts, 'Lasted', record.endedAt
+    ? fmtDuration(record.endedAt - record.startedAt)
+    : 'still open');
+  fact(ui.detailFacts, 'Code', record.code);
+  fact(ui.detailFacts, 'Source', sourceLabel(record));
+  fact(ui.detailFacts, 'Visibility', record.isPublic ? 'Public' : 'Private');
+  fact(ui.detailFacts, 'Your role', record.wasHost ? 'Host' : (record.companion ? 'Second screen' : 'Guest'));
+
+  ui.detailPeople.innerHTML = '';
+  if (!record.people.length) {
+    const li = document.createElement('li');
+    li.className = 'muted-row';
+    li.textContent = 'Nobody else joined.';
+    ui.detailPeople.appendChild(li);
+  }
+  for (const p of record.people) {
+    const li = document.createElement('li');
+    const av = document.createElement('span');
+    av.className = 'av';
+    av.textContent = (p.name[0] || '?').toUpperCase();
+    const label = document.createElement('span');
+    label.textContent = p.name + (p.companion ? ' (2nd screen)' : '');
+    const when = document.createElement('span');
+    when.className = 'meta';
+    when.textContent = fmtWhen(p.firstSeen);
+    li.appendChild(av);
+    li.appendChild(label);
+    li.appendChild(when);
+    ui.detailPeople.appendChild(li);
+  }
+
+  ui.detailLog.innerHTML = '';
+  if (!record.log.length) {
+    const li = document.createElement('li');
+    li.className = 'muted-row';
+    li.textContent = 'Nothing was said.';
+    ui.detailLog.appendChild(li);
+  }
+  for (const entry of record.log) {
+    const li = document.createElement('li');
+    li.className = entry.kind === 'system' ? 'log-sys' : 'log-msg';
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date(entry.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    li.appendChild(time);
+    if (entry.kind !== 'system') {
+      const who = document.createElement('span');
+      who.className = 'log-who';
+      who.textContent = entry.name;
+      li.appendChild(who);
+    }
+    li.appendChild(document.createTextNode(entry.text));
+    ui.detailLog.appendChild(li);
+  }
+}
+
+ui.historyBack.addEventListener('click', renderHistoryList);
+
+ui.historyClear.addEventListener('click', () => {
+  if (!confirm('Delete every saved session from this device?')) return;
+  writeHistory([]);
+  renderHistoryList();
+});
+
+/* ------------------------------------------------------------------ */
+/* boot the home screen                                                */
+/* ------------------------------------------------------------------ */
+
+renderProfile();
+showView(location.hash.replace(/^#\/?/, '') || 'browse', true);

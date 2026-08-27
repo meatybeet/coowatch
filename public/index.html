@@ -22,24 +22,38 @@
   <div class="glow glow-b" aria-hidden="true"></div>
   <div class="glow glow-c" aria-hidden="true"></div>
 
-  <nav class="home-nav" aria-label="Home navigation">
+  <nav class="home-nav" aria-label="Main">
     <div class="home-nav-inner">
-      <a class="home-nav-brand" href="#home">
+      <button type="button" class="home-nav-brand" data-view="browse">
         <svg class="home-nav-logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
-        <span>CooWatch</span>
-      </a>
+        <span class="brand-word">CooWatch</span>
+      </button>
 
-      <div class="home-nav-links">
-        <a href="#browse-card">Browse</a>
-        <a href="#host-card">Host</a>
-        <a href="#join-card">Join</a>
+      <div class="home-nav-links" role="tablist">
+        <button type="button" class="nav-link is-active" data-view="browse" role="tab" aria-selected="true">Browse</button>
+        <button type="button" class="nav-link" data-view="create" role="tab" aria-selected="false">Create</button>
+        <button type="button" class="nav-link" data-view="join" role="tab" aria-selected="false">Join</button>
+        <button type="button" class="nav-link" data-view="history" role="tab" aria-selected="false">History</button>
       </div>
 
       <div class="home-nav-actions">
+        <div class="profile-wrap">
+          <button id="profile-btn" class="profile-chip" aria-haspopup="true" aria-expanded="false">
+            <span class="av" id="profile-av">?</span>
+            <span class="profile-label" id="profile-name">Add name</span>
+          </button>
+          <div id="profile-menu" class="profile-menu" hidden>
+            <label for="name">Display name</label>
+            <input id="name" type="text" placeholder="e.g. Alex" maxlength="24" autocomplete="nickname">
+            <p class="hint">Everyone in a session sees this.</p>
+          </div>
+        </div>
+
         <button id="music-btn-home" class="icon-btn music" aria-pressed="true" aria-label="Waiting room music" title="Waiting room music">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="m-note" d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle class="m-note" cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle class="m-note" cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path class="m-slash" d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <a class="icon-btn home-nav-gh" href="https://github.com/meatybeet" target="_blank" rel="noopener noreferrer" aria-label="CooWatch on GitHub" title="GitHub">
+
+        <a class="icon-btn home-nav-gh" href="https://github.com/meatybeet/coowatch" target="_blank" rel="noopener noreferrer" aria-label="CooWatch on GitHub" title="Source on GitHub">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
         </a>
       </div>
@@ -47,166 +61,195 @@
   </nav>
 
   <div class="home-inner">
-    <header class="home-head">
+    <div class="view is-active" id="view-browse">
+      <header class="home-head">
       <div class="brand" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
+      <svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
       </div>
       <h1>CooWatch</h1>
       <p class="tag">Same video, same second, from anywhere.</p>
-    </header>
+      </header>
 
-    <!-- Public Sessions Card -->
-    <div id="browse-card" class="card card-public card-lead">
+      <div id="browse-card" class="card card-public card-lead">
       <div class="row-between">
-        <div class="card-head margin-none">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </div>
-          <h2>Public sessions</h2>
-        </div>
-        <button id="refresh-btn" class="ghost small">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <span>Refresh</span>
-        </button>
+      <div class="card-head margin-none">
+      <div class="card-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
+      <h2>Public sessions</h2>
+      </div>
+      <button id="refresh-btn" class="ghost small">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      <span>Refresh</span>
+      </button>
       </div>
       <ul id="public-list" class="public-list"></ul>
       <p class="empty" id="public-empty">No public sessions yet. Start one below and it will show up here.</p>
-    </div>
-
-    <!-- User Name Card -->
-    <div class="card card-profile">
-      <div class="card-head">
-        <div class="card-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        </div>
-        <h2>Your profile</h2>
-      </div>
-      <div class="profile-field">
-        <label for="name">Display name</label>
-        <input id="name" type="text" placeholder="e.g. Alex" maxlength="24" autocomplete="nickname">
       </div>
     </div>
 
-    <!-- Responsive Layout Grid -->
-    <div class="home-grid">
-      <!-- Column 1: Start a session -->
+    <div class="view" id="view-create">
+      <div class="view-head">
+        <h2 class="view-title">Start a session</h2>
+        <p class="view-sub">Pick what you are watching and who can join.</p>
+      </div>
       <div id="host-card" class="card card-create">
-        <div class="card-head">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-          </div>
-          <h2>Start a session</h2>
-        </div>
-
-        <label for="title">Session title</label>
-        <input id="title" type="text" placeholder="e.g. Movie Night, Episode 4" maxlength="60">
-
-        <label>Video source</label>
-        <div class="seg" id="source-seg">
-          <button type="button" class="seg-btn active" data-source="file">
-            <div class="seg-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="14" r="3"/><polygon points="12 13 13 15 11 15"/></svg>
-            </div>
-            <div class="seg-content">
-              <span class="seg-title">From my device</span>
-              <span class="seg-sub">Local video or screen share</span>
-            </div>
-          </button>
-          <button type="button" class="seg-btn" data-source="youtube">
-            <div class="seg-icon yt-color">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-            </div>
-            <div class="seg-content">
-              <span class="seg-title">YouTube Link</span>
-              <span class="seg-sub">Synced web video</span>
-            </div>
-          </button>
-        </div>
-        <p class="hint" id="source-hint">Play a file, or share a browser tab so anything you can watch, she can watch. Streams straight to whoever joins - keep this tab open.</p>
-
-        <label>Who can join</label>
-        <div class="seg" id="privacy-seg">
-          <button type="button" class="seg-btn active" data-public="false">
-            <div class="seg-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </div>
-            <div class="seg-content">
-              <span class="seg-title">Private</span>
-              <span class="seg-sub">Invite link or code only</span>
-            </div>
-          </button>
-          <button type="button" class="seg-btn" data-public="true">
-            <div class="seg-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            </div>
-            <div class="seg-content">
-              <span class="seg-title">Public</span>
-              <span class="seg-sub">Listed on home feed</span>
-            </div>
-          </button>
-        </div>
-
-        <button id="create-btn" class="primary">
-          <span>Create session</span>
-          <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
+      <div class="card-head">
+      <div class="card-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+      </div>
+      <h2>Start a session</h2>
       </div>
 
-      <!-- Column 2: Join session + Public sessions -->
-      <div class="home-col">
-        <!-- Join Session Card -->
-        <div id="join-card" class="card card-join">
-          <div class="card-head">
+      <label for="title">Session title</label>
+      <input id="title" type="text" placeholder="e.g. Movie Night, Episode 4" maxlength="60">
+
+      <label>Video source</label>
+      <div class="seg" id="source-seg">
+      <button type="button" class="seg-btn active" data-source="file">
+      <div class="seg-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="14" r="3"/><polygon points="12 13 13 15 11 15"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">From my device</span>
+      <span class="seg-sub">Local video or screen share</span>
+      </div>
+      </button>
+      <button type="button" class="seg-btn" data-source="youtube">
+      <div class="seg-icon yt-color">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">YouTube Link</span>
+      <span class="seg-sub">Synced web video</span>
+      </div>
+      </button>
+      </div>
+      <p class="hint" id="source-hint">Play a file, or share a browser tab so anything you can watch, she can watch. Streams straight to whoever joins - keep this tab open.</p>
+
+      <label>Who can join</label>
+      <div class="seg" id="privacy-seg">
+      <button type="button" class="seg-btn active" data-public="false">
+      <div class="seg-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">Private</span>
+      <span class="seg-sub">Invite link or code only</span>
+      </div>
+      </button>
+      <button type="button" class="seg-btn" data-public="true">
+      <div class="seg-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">Public</span>
+      <span class="seg-sub">Listed on home feed</span>
+      </div>
+      </button>
+      </div>
+
+      <button id="create-btn" class="primary">
+      <span>Create session</span>
+      <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+      </div>
+    </div>
+
+    <div class="view" id="view-join">
+      <div class="view-head">
+        <h2 class="view-title">Join a session</h2>
+        <p class="view-sub">Enter the code someone sent you.</p>
+      </div>
+      <div id="join-card" class="card card-join">
+      <div class="card-head">
+      <div class="card-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      </div>
+      <h2>Join a session</h2>
+      </div>
+
+      <label for="code">Session code</label>
+      <input id="code" type="text" placeholder="ABC123" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false">
+
+      <label>Device role</label>
+      <div class="seg" id="role-seg">
+      <button type="button" class="seg-btn active" data-companion="false">
+      <div class="seg-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">Watch here</span>
+      <span class="seg-sub">Video, voice and chat</span>
+      </div>
+      </button>
+      <button type="button" class="seg-btn" data-companion="true">
+      <div class="seg-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      </div>
+      <div class="seg-content">
+      <span class="seg-title">Second screen</span>
+      <span class="seg-sub">Remote control and chat</span>
+      </div>
+      </button>
+      </div>
+      <p class="hint" id="role-hint">Already watching on another device? Second screen skips the video so it costs no extra bandwidth.</p>
+
+      <button id="join-btn" class="primary">
+      <span>Join session</span>
+      <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+      </div>
+    </div>
+
+    <div class="view" id="view-history">
+      <div class="view-head">
+        <h2 class="view-title">Session history</h2>
+        <p class="view-sub">Kept on this device only. Nothing is uploaded.</p>
+      </div>
+
+      <div class="card">
+        <div class="row-between">
+          <div class="card-head margin-none">
             <div class="card-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
-            <h2>Join a session</h2>
+            <h2>Past sessions</h2>
           </div>
-
-          <label for="code">Session code</label>
-          <input id="code" type="text" placeholder="ABC123" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false">
-
-          <label>Device role</label>
-          <div class="seg" id="role-seg">
-            <button type="button" class="seg-btn active" data-companion="false">
-              <div class="seg-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              </div>
-              <div class="seg-content">
-                <span class="seg-title">Watch here</span>
-                <span class="seg-sub">Video, voice and chat</span>
-              </div>
-            </button>
-            <button type="button" class="seg-btn" data-companion="true">
-              <div class="seg-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-              </div>
-              <div class="seg-content">
-                <span class="seg-title">Second screen</span>
-                <span class="seg-sub">Remote control and chat</span>
-              </div>
-            </button>
-          </div>
-          <p class="hint" id="role-hint">Already watching on another device? Second screen skips the video so it costs no extra bandwidth.</p>
-
-          <button id="join-btn" class="primary">
-            <span>Join session</span>
-            <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          </button>
+          <button id="history-clear" class="ghost small">Clear all</button>
         </div>
+        <ul id="history-list" class="history-list"></ul>
+        <p class="empty" id="history-empty">No sessions yet. Once you host or join one, it shows up here.</p>
+      </div>
+
+      <div class="card" id="history-detail" hidden>
+        <div class="row-between">
+          <div class="card-head margin-none">
+            <button id="history-back" class="ghost small">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Back</span>
+            </button>
+            <h2 id="detail-title">Session</h2>
+          </div>
+        </div>
+        <dl class="detail-facts" id="detail-facts"></dl>
+        <h3 class="detail-sub">Who was there</h3>
+        <ul class="detail-people" id="detail-people"></ul>
+        <h3 class="detail-sub">Transcript</h3>
+        <ul class="detail-log" id="detail-log"></ul>
       </div>
     </div>
 
     <p id="home-error" class="error" hidden></p>
-
-    <footer class="site-footer">
-      <p class="made-by">Made with <span class="heart" aria-hidden="true">❤️</span><span class="sr-only">love</span> by Alban OGOULA <span class="aside">(and Claude, who did NOT ask for credit)</span></p>
-      <a class="footer-link" href="https://github.com/meatybeet" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
-        <span>github.com/meatybeet</span>
-      </a>
-    </footer>
   </div>
+
+  <footer class="site-footer">
+  <p class="made-by">Made with <span class="heart" aria-hidden="true">❤️</span><span class="sr-only">love</span> by Alban OGOULA <span class="aside">(and Claude, who did NOT ask for credit)</span></p>
+  <a class="footer-link" href="https://github.com/meatybeet" target="_blank" rel="noopener noreferrer">
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
+  <span>github.com/meatybeet</span>
+  </a>
+  </footer>
 </section>
 
 <!-- ---------- ROOM ---------- -->
