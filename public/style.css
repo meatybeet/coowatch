@@ -59,7 +59,11 @@ html, body {
 }
 
 body {
+  /* `hidden` makes body a scroll container, which stops the sticky navbar from
+     sticking. `clip` crops identically without that side effect; browsers that
+     do not know it fall back to the line above. */
   overflow-x: hidden;
+  overflow-x: clip;
   background-color: var(--bg);
   background-image:
     radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
@@ -1868,23 +1872,7 @@ input[type="text"]:focus {
   50% { opacity: 0.45; }
 }
 
-.music-float {
-  position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
 #waiting-audio { display: none; }
-
-@media (max-width: 520px) {
-  .music-float { top: 12px; right: 12px; }
-}
 
 /* ---------- footer ---------- */
 
@@ -1992,4 +1980,119 @@ input[type="text"]:focus {
 @keyframes lead-in {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ---------- home sticky navbar ---------- */
+
+.home-nav {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background: rgba(10, 12, 20, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 12px 30px -22px rgba(0, 0, 0, 0.9);
+}
+
+.home-nav-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.home-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.home-nav-logo {
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--accent-grad);
+  color: #ffffff;
+  box-shadow: 0 4px 12px -4px rgba(139, 92, 246, 0.7);
+  flex-shrink: 0;
+}
+
+.home-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+}
+
+.home-nav-links a {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.18s var(--ease-out), background 0.18s var(--ease-out);
+}
+
+.home-nav-links a:hover {
+  color: var(--text);
+  background: var(--raise);
+}
+
+.home-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.home-nav-gh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.home-nav-gh svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The hero already sat right under a fixed music button; now it sits
+   right under the navbar, so drop its own top margin to avoid double
+   spacing. */
+.home-inner .home-head {
+  margin-top: 0;
+}
+
+/* Anchor targets for the navbar links: keep the card heading clear of
+   the sticky bar when jumped to. */
+#browse-card,
+#host-card,
+#join-card {
+  scroll-margin-top: 76px;
+}
+
+@media (max-width: 720px) {
+  .home-nav-links {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-nav-links a {
+    transition: none;
+  }
 }

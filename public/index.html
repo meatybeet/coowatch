@@ -22,9 +22,29 @@
   <div class="glow glow-b" aria-hidden="true"></div>
   <div class="glow glow-c" aria-hidden="true"></div>
 
-  <button id="music-btn-home" class="icon-btn music music-float" aria-pressed="true" aria-label="Waiting room music" title="Waiting room music">
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="m-note" d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle class="m-note" cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle class="m-note" cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path class="m-slash" d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-  </button>
+  <nav class="home-nav" aria-label="Home navigation">
+    <div class="home-nav-inner">
+      <a class="home-nav-brand" href="#home">
+        <svg class="home-nav-logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
+        <span>CooWatch</span>
+      </a>
+
+      <div class="home-nav-links">
+        <a href="#browse-card">Browse</a>
+        <a href="#host-card">Host</a>
+        <a href="#join-card">Join</a>
+      </div>
+
+      <div class="home-nav-actions">
+        <button id="music-btn-home" class="icon-btn music" aria-pressed="true" aria-label="Waiting room music" title="Waiting room music">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="m-note" d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle class="m-note" cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle class="m-note" cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path class="m-slash" d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <a class="icon-btn home-nav-gh" href="https://github.com/meatybeet" target="_blank" rel="noopener noreferrer" aria-label="CooWatch on GitHub" title="GitHub">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
 
   <div class="home-inner">
     <header class="home-head">
@@ -36,7 +56,7 @@
     </header>
 
     <!-- Public Sessions Card -->
-    <div class="card card-public card-lead">
+    <div id="browse-card" class="card card-public card-lead">
       <div class="row-between">
         <div class="card-head margin-none">
           <div class="card-icon">
@@ -70,7 +90,7 @@
     <!-- Responsive Layout Grid -->
     <div class="home-grid">
       <!-- Column 1: Start a session -->
-      <div class="card card-create">
+      <div id="host-card" class="card card-create">
         <div class="card-head">
           <div class="card-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
@@ -135,7 +155,7 @@
       <!-- Column 2: Join session + Public sessions -->
       <div class="home-col">
         <!-- Join Session Card -->
-        <div class="card card-join">
+        <div id="join-card" class="card card-join">
           <div class="card-head">
             <div class="card-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
